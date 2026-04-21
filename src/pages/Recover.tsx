@@ -43,8 +43,9 @@ export default function Recover() {
                 : 'unknown',
           },
         ];
-      } catch {
-        return [...prev, { payload: raw, kind: 'unknown', detail: 'not a SuperSecretSecrets QR' }];
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : 'not a SuperSecretSecrets QR';
+        return [...prev, { payload: raw, kind: 'unknown', detail: reason }];
       }
     });
   }, []);

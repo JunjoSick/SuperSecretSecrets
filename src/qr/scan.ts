@@ -7,6 +7,21 @@ export type ScanResult = { text: string };
  * Runs purely in the browser via <img> + offscreen canvas.
  */
 export async function scanImageFile(file: File | Blob): Promise<ScanResult | null> {
+  // Prefer createImageBitmap where available — it fully decodes the PNG/JPEG
+  // into pixels before returning, which avoids a class of "<img> loaded but
+  // drawImage silently drew nothing" bugs we hit with blob: URLs.
+  if (typeof createImageBitmap === 'function') {
+    try {
+      const bitmap = await createImageBitmap(file);
+      try {
+        return scanImageBitmap(bitmap);
+      } finally {
+        bitmap.close?.();
+      }
+    } catch {
+      // fall through to <img> path (e.g. SVG inputs, which some browsers refuse via createImageBitmap)
+    }
+  }
   const url = URL.createObjectURL(file);
   try {
     const img = await loadImage(url);
@@ -19,6 +34,7 @@ export async function scanImageFile(file: File | Blob): Promise<ScanResult | nul
 export function scanImageBitmap(img: HTMLImageElement | ImageBitmap): ScanResult | null {
   const width = 'naturalWidth' in img ? img.naturalWidth : img.width;
   const height = 'naturalHeight' in img ? img.naturalHeight : img.height;
+  if (!width || !height) return null;
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
@@ -26,6 +42,8 @@ export function scanImageBitmap(img: HTMLImageElement | ImageBitmap): ScanResult
   if (!ctx) return null;
   ctx.drawImage(img, 0, 0);
   const data = ctx.getImageData(0, 0, width, height);
+  // attemptBoth lets jsQR try both normal and inverted colors, which helps
+  // with non-pure-black "dark" QR colors that some scanners misclassify.
   const code = jsQR(data.data, data.width, data.height, { inversionAttempts: 'attemptBoth' });
   return code ? { text: code.data } : null;
 }
@@ -40,11 +58,21 @@ export function scanRawPixels(
 }
 
 function loadImage(src: string): Promise<HTMLImageElement> {
+  // Intentionally no `crossOrigin` setting: blob: URLs are same-origin and
+  // asking for CORS on them can cause tainted-canvas false positives in some
+  // browsers. We also await decode() when available to make sure the pixels
+  // are actually ready before we draw into a canvas.
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.onload = () => resolve(img);
+    img.onload = async () => {
+      try {
+        if (typeof img.decode === 'function') await img.decode();
+      } catch {
+        // decode() throwing is rare; drawImage still often works, try anyway
+      }
+      resolve(img);
+    };
     img.onerror = () => reject(new Error('failed to load image'));
-    img.crossOrigin = 'anonymous';
     img.src = src;
   });
 }
