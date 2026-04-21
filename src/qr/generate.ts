@@ -19,7 +19,10 @@ const DEFAULTS: Required<Omit<QrRenderOptions, 'darkColor' | 'lightColor'>> & {
   ecc: 'M',
   size: 320,
   margin: 2,
-  darkColor: '#0c1430',
+  // Pure black + pure white maximises luminance contrast, which is what
+  // jsQR (and phone camera scanners) threshold against. Tinted "dark" colors
+  // can get color-managed by browser canvases into values jsQR misclassifies.
+  darkColor: '#000000',
   lightColor: '#ffffff',
 };
 
