@@ -1,0 +1,19 @@
+import { createBrowserRouter } from 'react-router-dom';
+import App from './App';
+import Landing from './pages/Landing';
+import Encode from './pages/Encode';
+import Recover from './pages/Recover';
+import About from './pages/About';
+
+export const router = createBrowserRouter([
+  {
+    path: '/',
+    element: <App />,
+    children: [
+      { index: true, element: <Landing /> },
+      { path: 'encode', element: <Encode /> },
+      { path: 'recover', element: <Recover /> },
+      { path: 'about', element: <About /> },
+    ],
+  },
+]);
