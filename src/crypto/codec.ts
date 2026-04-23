@@ -1,4 +1,3 @@
-import b45 from 'base45';
 import { KEM_ALG_ID, KEM_ALG_NAME, type KemAlg } from './pq';
 import { AEAD_ALG_ID, AEAD_ALG_NAME, type AeadAlg } from './aead';
 import { KDF_ALG_ID, KDF_ALG_NAME, type KdfAlg } from './kdf';
@@ -180,10 +179,59 @@ export function parse(raw: Uint8Array): ParsedQr {
   throw new Error(`unknown QR kind 0x${kind.toString(16)}`);
 }
 
+// Inline base45 (RFC 9285). Self-contained so we don't depend on the `base45`
+// npm package, which calls Node's `Buffer.from` inside decode() and crashes in
+// browsers with "Buffer is not defined".
+const B45_ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:';
+const B45_INDEX: Record<string, number> = (() => {
+  const m: Record<string, number> = {};
+  for (let i = 0; i < B45_ALPHABET.length; i++) m[B45_ALPHABET[i]!] = i;
+  return m;
+})();
+
 export function toBase45(raw: Uint8Array): string {
-  return b45.encode(raw);
+  let out = '';
+  let i = 0;
+  while (i + 2 <= raw.length) {
+    const x = (raw[i]! << 8) + raw[i + 1]!;
+    const e = Math.floor(x / (45 * 45));
+    const rest = x - e * 45 * 45;
+    const d = Math.floor(rest / 45);
+    const c = rest - d * 45;
+    out += B45_ALPHABET[c]! + B45_ALPHABET[d]! + B45_ALPHABET[e]!;
+    i += 2;
+  }
+  if (i < raw.length) {
+    const b = raw[i]!;
+    const d = Math.floor(b / 45);
+    const c = b - d * 45;
+    out += B45_ALPHABET[c]! + B45_ALPHABET[d]!;
+  }
+  return out;
 }
 
 export function fromBase45(s: string): Uint8Array {
-  return new Uint8Array(b45.decode(s.trim().toUpperCase()));
+  const input = s.trim().toUpperCase();
+  const digits: number[] = new Array(input.length);
+  for (let i = 0; i < input.length; i++) {
+    const v = B45_INDEX[input[i]!];
+    if (v === undefined) throw new Error(`invalid base45 character at position ${i}`);
+    digits[i] = v;
+  }
+  const out: number[] = [];
+  let i = 0;
+  while (i + 3 <= digits.length) {
+    const x = digits[i]! + digits[i + 1]! * 45 + digits[i + 2]! * 45 * 45;
+    if (x > 0xffff) throw new Error('base45 triple out of range');
+    out.push((x >> 8) & 0xff, x & 0xff);
+    i += 3;
+  }
+  if (digits.length - i === 2) {
+    const x = digits[i]! + digits[i + 1]! * 45;
+    if (x > 0xff) throw new Error('base45 pair out of range');
+    out.push(x);
+  } else if (digits.length - i === 1) {
+    throw new Error('base45 input has dangling character');
+  }
+  return new Uint8Array(out);
 }
