@@ -24,10 +24,17 @@ export default function Encode() {
   const [zipContent, setZipContent] = useState<ZipContentOptions>(DEFAULT_ZIP_CONTENT);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [draftShares, setDraftShares] = useState(opts.shares);
+  const [draftThreshold, setDraftThreshold] = useState(opts.threshold);
 
   const canGenerate = text.trim().length > 0 && !busy;
   const bytes = useMemo(() => new TextEncoder().encode(text).length, [text]);
   const lines = Math.max(text.split('\n').length, 18);
+
+  useEffect(() => {
+    setDraftShares(opts.shares);
+    setDraftThreshold(opts.threshold);
+  }, [opts.shares, opts.threshold]);
 
   const generate = async () => {
     setErr(null);
@@ -119,8 +126,8 @@ export default function Encode() {
               <div className="mono-upper">threshold</div>
               <h3 className="mt-2 text-sm font-semibold text-ink-100">Trustees</h3>
               <p className="mt-1 text-xs text-ink-400">
-                Any <span className="font-mono text-ink-200">{opts.threshold}</span> of{' '}
-                <span className="font-mono text-ink-200">{opts.shares}</span> trustees can help you
+                Any <span className="font-mono text-ink-200">{draftThreshold}</span> of{' '}
+                <span className="font-mono text-ink-200">{draftShares}</span> trustees can help you
                 recover.
               </p>
               <div className="mt-4 space-y-4">
@@ -129,6 +136,11 @@ export default function Encode() {
                   min={2}
                   max={12}
                   value={opts.shares}
+                  draftValue={draftShares}
+                  onDraft={(v) => {
+                    setDraftShares(v);
+                    setDraftThreshold((current) => Math.min(current, v));
+                  }}
                   onCommit={(v) =>
                     setOpts({
                       ...opts,
@@ -140,30 +152,14 @@ export default function Encode() {
                 <Slider
                   label="Threshold (T)"
                   min={2}
-                  max={opts.shares}
+                  max={draftShares}
                   value={opts.threshold}
+                  draftValue={draftThreshold}
+                  onDraft={setDraftThreshold}
                   onCommit={(v) => setOpts({ ...opts, threshold: v })}
                 />
               </div>
-              <div className="mt-5 grid gap-2" style={{ gridTemplateColumns: `repeat(${opts.shares}, minmax(0, 1fr))` }}>
-                {Array.from({ length: opts.shares }).map((_, i) => {
-                  const quorum = i < opts.threshold;
-                  return (
-                    <div
-                      key={i}
-                      className={[
-                        'border px-2 py-2 text-center text-[10px]',
-                        quorum
-                          ? 'border-accent-300/50 bg-accent-500/10 text-accent-200'
-                          : 'border-white/10 bg-white/[0.03] text-ink-500',
-                      ].join(' ')}
-                    >
-                      <div>SHARE</div>
-                      <div className="mt-1 text-sm">{String(i + 1).padStart(2, '0')}</div>
-                    </div>
-                  );
-                })}
-              </div>
+              <SharePreview shares={draftShares} threshold={draftThreshold} />
             </div>
 
             <SettingsPanel opts={opts} setOpts={setOpts} ecc={ecc} setEcc={setEcc} />
@@ -323,26 +319,23 @@ function Slider({
   min,
   max,
   value,
+  draftValue,
+  onDraft,
   onCommit,
 }: {
   label: string;
   min: number;
   max: number;
   value: number;
+  draftValue: number;
+  onDraft: (v: number) => void;
   onCommit: (v: number) => void;
 }) {
-  const [draft, setDraft] = useState(value);
-  const [dragging, setDragging] = useState(false);
-
-  useEffect(() => {
-    setDraft(value);
-  }, [value]);
-
   const clamp = (v: number) => Math.min(max, Math.max(min, v));
-  const commit = (raw = draft) => {
+  const integerDraft = Math.round(clamp(draftValue));
+  const commit = (raw = draftValue) => {
     const snapped = Math.round(clamp(raw));
-    setDraft(snapped);
-    setDragging(false);
+    onDraft(snapped);
     if (snapped !== value) onCommit(snapped);
   };
 
@@ -350,9 +343,7 @@ function Slider({
     <div>
       <div className="flex items-center justify-between text-xs text-ink-300">
         <span>{label}</span>
-        <span className="font-mono text-ink-100">
-          {dragging ? `~${clamp(draft).toFixed(1)}` : value}
-        </span>
+        <span className="font-mono text-ink-100">{integerDraft}</span>
       </div>
       <input
         className="mt-1.5 w-full accent-accent-500"
@@ -360,10 +351,9 @@ function Slider({
         min={min}
         max={max}
         step={0.01}
-        value={clamp(draft)}
+        value={clamp(draftValue)}
         onChange={(e) => {
-          setDragging(true);
-          setDraft(Number(e.target.value));
+          onDraft(Math.round(clamp(Number(e.target.value))));
         }}
         onPointerUp={(e) => commit(Number(e.currentTarget.value))}
         onKeyUp={(e) => {
@@ -373,6 +363,38 @@ function Slider({
         }}
         onBlur={(e) => commit(Number(e.currentTarget.value))}
       />
+    </div>
+  );
+}
+
+function SharePreview({ shares, threshold }: { shares: number; threshold: number }) {
+  return (
+    <div className="mt-5">
+      <div className="mb-2 flex items-center justify-between text-[10px] uppercase tracking-[0.14em] text-ink-500">
+        <span>distribution preview</span>
+        <span className="text-accent-200">
+          {threshold} / {shares}
+        </span>
+      </div>
+      <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
+        {Array.from({ length: shares }).map((_, i) => {
+          const quorum = i < threshold;
+          return (
+            <div
+              key={i}
+              className={[
+                'min-w-0 border px-2 py-2 text-center transition-colors duration-150',
+                quorum
+                  ? 'border-accent-300/60 bg-accent-500/10 text-accent-200 shadow-[0_0_24px_-18px_rgb(93_220_255)]'
+                  : 'border-white/10 bg-white/[0.03] text-ink-500',
+              ].join(' ')}
+            >
+              <div className="text-[8px] uppercase tracking-[0.08em]">S</div>
+              <div className="mt-0.5 font-mono text-xs">{String(i + 1).padStart(2, '0')}</div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
