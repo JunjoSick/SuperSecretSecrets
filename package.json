@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Turn a secret into QR codes only quantum computers can't read.",
+  "description": "Turn a secret into QR codes even quantum computers can't read.",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b --noEmit && vite build && node scripts/spa-404.mjs",

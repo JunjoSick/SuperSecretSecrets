@@ -3,6 +3,21 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --bg: oklch(0.14 0.01 240);
+    --bg-2: oklch(0.17 0.012 240);
+    --bg-3: oklch(0.20 0.014 240);
+    --line: oklch(0.28 0.015 240);
+    --line-soft: oklch(0.22 0.012 240);
+    --fg: oklch(0.94 0.008 240);
+    --fg-dim: oklch(0.70 0.010 240);
+    --fg-mute: oklch(0.52 0.012 240);
+    --accent: oklch(0.82 0.15 200);
+    --accent-dim: oklch(0.50 0.12 200);
+    --amber: oklch(0.82 0.15 70);
+    --grain: 0.035;
+  }
+
   html,
   body {
     @apply h-full;
@@ -11,10 +26,33 @@
   body {
     @apply bg-ink-950 font-sans text-ink-100 antialiased;
     background-image:
-      radial-gradient(ellipse 80% 60% at 50% -10%, rgb(58 91 255 / 0.18), transparent 60%),
-      radial-gradient(ellipse 60% 50% at 100% 100%, rgb(147 177 255 / 0.08), transparent 60%),
-      radial-gradient(ellipse 60% 50% at 0% 100%, rgb(26 45 196 / 0.12), transparent 60%);
+      radial-gradient(ellipse 60% 50% at 50% -10%, rgb(35 201 241 / 0.14), transparent 60%),
+      radial-gradient(ellipse 50% 40% at 100% 100%, rgb(232 170 52 / 0.06), transparent 65%),
+      linear-gradient(to right, rgb(92 112 122 / 0.13) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(92 112 122 / 0.13) 1px, transparent 1px);
+    background-size: auto, auto, 40px 40px, 40px 40px;
     background-attachment: fixed;
+    font-size: 13px;
+    letter-spacing: 0.01em;
+    text-rendering: geometricPrecision;
+  }
+
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    pointer-events: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.55 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+    opacity: var(--grain);
+    mix-blend-mode: overlay;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
   }
 
   ::selection {
@@ -24,39 +62,134 @@
 
 @layer components {
   .card {
-    @apply rounded-2xl border border-white/10 bg-white/[0.02] backdrop-blur-sm;
+    @apply border border-white/10 bg-white/[0.025] backdrop-blur-sm;
+    border-radius: 2px;
   }
 
   .card-hover {
-    @apply card transition-all hover:border-accent-400/40 hover:bg-white/[0.04] hover:shadow-glow;
+    @apply card transition-all hover:border-accent-400/60 hover:bg-white/[0.05] hover:shadow-glow;
   }
 
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-400 focus-visible:ring-offset-2 focus-visible:ring-offset-ink-950 disabled:pointer-events-none disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 border px-4 py-2 text-xs font-medium uppercase tracking-[0.14em] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-300 focus-visible:ring-offset-2 focus-visible:ring-offset-ink-950 disabled:pointer-events-none disabled:opacity-50;
+    border-radius: 2px;
   }
 
   .btn-primary {
-    @apply btn bg-accent-500 text-white hover:bg-accent-400 shadow-glow;
+    @apply btn border-accent-300/60 bg-accent-500/15 text-accent-200 hover:bg-accent-500/25 shadow-glow;
   }
 
   .btn-ghost {
-    @apply btn bg-white/5 text-ink-100 hover:bg-white/10;
+    @apply btn border-white/10 bg-transparent text-ink-200 hover:border-ink-300 hover:bg-white/[0.04];
   }
 
   .btn-outline {
-    @apply btn border border-white/15 text-ink-100 hover:bg-white/5;
+    @apply btn border-white/15 bg-ink-900/50 text-ink-100 hover:border-ink-300 hover:bg-white/[0.04];
   }
 
   .input {
-    @apply w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-ink-50 placeholder:text-ink-400 focus:border-accent-400 focus:outline-none focus:ring-2 focus:ring-accent-400/30;
+    @apply w-full border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-ink-50 placeholder:text-ink-500 focus:border-accent-400 focus:outline-none focus:ring-1 focus:ring-accent-400/40;
+    border-radius: 2px;
   }
 
   .chip {
-    @apply inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-xs font-medium text-ink-200;
+    @apply inline-flex items-center gap-1.5 border border-white/10 bg-white/[0.04] px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.14em] text-ink-300;
+    border-radius: 999px;
   }
 
   .kbd {
     @apply inline-flex items-center rounded-md border border-white/15 bg-white/5 px-1.5 py-0.5 font-mono text-[10px] text-ink-200;
+  }
+
+  .mono-upper {
+    @apply text-[10px] font-medium uppercase tracking-[0.14em] text-ink-500;
+  }
+
+  .hair {
+    @apply h-px bg-white/10;
+  }
+
+  .instrument-panel {
+    @apply border border-white/10 bg-ink-900/80;
+    border-radius: 2px;
+  }
+
+  .line-gutter {
+    @apply border-r border-white/10 bg-white/[0.035] px-2 py-4 text-right text-[11px] leading-relaxed text-ink-500;
+  }
+
+  .viewfinder {
+    @apply relative overflow-hidden border border-white/10 bg-black;
+    border-radius: 2px;
+  }
+
+  .viewfinder::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(ellipse at 30% 40%, rgb(35 201 241 / 0.16), transparent 58%),
+      radial-gradient(ellipse at 75% 70%, rgb(255 255 255 / 0.06), transparent 62%),
+      #040607;
+  }
+
+  .viewfinder::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 36%;
+    background: linear-gradient(180deg, transparent, rgb(35 201 241 / 0.18), transparent);
+    animation: sweep 2.4s linear infinite;
+  }
+
+  .viewfinder-plain::before,
+  .viewfinder-plain::after {
+    display: none;
+  }
+}
+
+@keyframes sweep {
+  0% {
+    transform: translateY(-100%);
+  }
+  100% {
+    transform: translateY(280%);
+  }
+}
+
+@keyframes tileIn {
+  0% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes revealNoise {
+  0% {
+    opacity: 0;
+    filter: blur(4px);
+    transform: translateY(4px);
+  }
+  100% {
+    opacity: 1;
+    filter: blur(0);
+    transform: none;
   }
 }
 

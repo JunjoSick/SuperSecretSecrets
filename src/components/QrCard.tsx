@@ -58,15 +58,15 @@ export function QrCard({ title, subtitle, accent = 'share', payload, ecc = 'M', 
     <div className="card overflow-hidden">
       <div
         className={[
-          'flex items-center justify-between border-b border-white/5 px-4 py-2.5 text-xs font-medium uppercase tracking-wider',
-          accent === 'header' ? 'bg-accent-500/10 text-accent-200' : 'bg-white/5 text-ink-200',
+          'flex items-center justify-between border-b border-white/10 px-4 py-2.5 text-[10px] font-medium uppercase tracking-[0.14em]',
+          accent === 'header' ? 'bg-accent-500/10 text-accent-200' : 'bg-white/[0.035] text-ink-300',
         ].join(' ')}
       >
         <span>{title}</span>
         {subtitle && <span className="text-[10px] normal-case tracking-normal text-ink-300">{subtitle}</span>}
       </div>
       <div className="flex flex-col items-center gap-3 p-4">
-        <div className="aspect-square w-full max-w-[280px] rounded-lg bg-white p-3">
+        <div className="aspect-square w-full max-w-[280px] border border-white/10 bg-white p-3">
           {dataUrl ? (
             <img src={dataUrl} alt={title} className="h-full w-full" />
           ) : err ? (

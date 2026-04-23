@@ -14,7 +14,8 @@ export function SettingsPanel({ opts, setOpts, ecc, setEcc }: Props) {
       <summary className="cursor-pointer select-none list-none">
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-sm font-semibold text-ink-100">Advanced options</div>
+            <div className="mono-upper">cipher suite</div>
+            <div className="mt-2 text-sm font-semibold text-ink-100">Advanced options</div>
             <div className="text-xs text-ink-400">
               ML-KEM / cipher / KDF / error correction — defaults are safe.
             </div>

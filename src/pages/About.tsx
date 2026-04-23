@@ -1,15 +1,16 @@
 export default function About() {
   return (
-    <div className="mx-auto max-w-3xl px-6 pb-24 pt-12">
-      <h1 className="text-3xl font-bold tracking-tight text-ink-50">About &amp; threat model</h1>
-      <p className="mt-3 text-ink-300">
+    <div className="mx-auto max-w-4xl px-6 pb-24 pt-12">
+      <div className="mono-upper">threat model</div>
+      <h1 className="mt-2 text-3xl font-medium tracking-tight text-ink-50">About &amp; threat model</h1>
+      <p className="mt-3 border-l border-accent-300/40 pl-4 text-ink-300">
         SuperSecretSecrets is a client-side tool for turning a piece of text
         into a set of QR codes that can be distributed to trustees for
         long-term backup. Any threshold-many trustees can cooperate to recover
         the original text; fewer than threshold-many learn nothing.
       </p>
 
-      <h2 className="mt-10 text-xl font-semibold text-ink-50">How it works</h2>
+      <h2 className="mt-10 text-xl font-medium text-ink-50">How it works</h2>
       <ol className="mt-3 list-decimal space-y-2 pl-5 text-ink-300">
         <li>
           A random 64-byte seed is generated in your browser and used to
@@ -35,7 +36,7 @@ export default function About() {
         </li>
       </ol>
 
-      <h2 className="mt-10 text-xl font-semibold text-ink-50">What this protects against</h2>
+      <h2 className="mt-10 text-xl font-medium text-ink-50">What this protects against</h2>
       <ul className="mt-3 list-disc space-y-2 pl-5 text-ink-300">
         <li>
           <strong className="text-ink-100">Future quantum adversaries.</strong>{' '}
@@ -54,7 +55,7 @@ export default function About() {
         </li>
       </ul>
 
-      <h2 className="mt-10 text-xl font-semibold text-ink-50">What it does NOT protect against</h2>
+      <h2 className="mt-10 text-xl font-medium text-ink-50">What it does NOT protect against</h2>
       <ul className="mt-3 list-disc space-y-2 pl-5 text-ink-300">
         <li>A compromised browser or device at the time of encoding/decoding.</li>
         <li>
@@ -65,8 +66,8 @@ export default function About() {
         <li>Bad passphrases. If you enable the passphrase option, use a strong one.</li>
       </ul>
 
-      <h2 className="mt-10 text-xl font-semibold text-ink-50">Cryptographic defaults</h2>
-      <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-[12rem_1fr]">
+      <h2 className="mt-10 text-xl font-medium text-ink-50">Cryptographic defaults</h2>
+      <dl className="card mt-3 grid grid-cols-1 gap-x-6 gap-y-2 p-5 text-sm sm:grid-cols-[12rem_1fr]">
         <Dt>KEM</Dt><Dd>ML-KEM-768 (FIPS 203)</Dd>
         <Dt>AEAD</Dt><Dd>AES-256-GCM</Dd>
         <Dt>KDF</Dt><Dd>HKDF-SHA-256</Dd>
@@ -75,7 +76,7 @@ export default function About() {
         <Dt>Passphrase stretching</Dt><Dd>Argon2id (when enabled)</Dd>
       </dl>
 
-      <h2 className="mt-10 text-xl font-semibold text-ink-50">Libraries</h2>
+      <h2 className="mt-10 text-xl font-medium text-ink-50">Libraries</h2>
       <p className="mt-3 text-ink-300">
         Built on{' '}
         <a className="underline decoration-dotted" href="https://github.com/paulmillr/noble-post-quantum">@noble/post-quantum</a>,{' '}
