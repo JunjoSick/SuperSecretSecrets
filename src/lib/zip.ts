@@ -2,6 +2,17 @@ import JSZip from 'jszip';
 import { renderDataUrl, renderSvg, type EccLevel } from '../qr/generate';
 
 export type BundleFile = { name: string; payload: string };
+export type ZipContentOptions = {
+  svg: boolean;
+  png: boolean;
+  txt: boolean;
+};
+
+export const DEFAULT_ZIP_CONTENT: ZipContentOptions = {
+  svg: true,
+  png: true,
+  txt: true,
+};
 
 function dataUrlToBytes(dataUrl: string): Uint8Array {
   const comma = dataUrl.indexOf(',');
@@ -12,16 +23,23 @@ function dataUrlToBytes(dataUrl: string): Uint8Array {
   return out;
 }
 
-export async function buildZip(files: BundleFile[], ecc: EccLevel = 'M'): Promise<Blob> {
+export async function buildZip(
+  files: BundleFile[],
+  ecc: EccLevel = 'M',
+  content: ZipContentOptions = DEFAULT_ZIP_CONTENT,
+): Promise<Blob> {
   const zip = new JSZip();
   for (const f of files) {
-    const [svg, pngDataUrl] = await Promise.all([
-      renderSvg(f.payload, { ecc, size: 480 }),
-      renderDataUrl(f.payload, { ecc, size: 480 }),
-    ]);
-    zip.file(`${f.name}.svg`, svg);
-    zip.file(`${f.name}.png`, dataUrlToBytes(pngDataUrl));
-    zip.file(`${f.name}.txt`, f.payload);
+    if (content.svg) {
+      zip.file(`${f.name}.svg`, await renderSvg(f.payload, { ecc, size: 480 }));
+    }
+    if (content.png) {
+      const pngDataUrl = await renderDataUrl(f.payload, { ecc, size: 480 });
+      zip.file(`${f.name}.png`, dataUrlToBytes(pngDataUrl));
+    }
+    if (content.txt) {
+      zip.file(`${f.name}.txt`, f.payload);
+    }
   }
   return zip.generateAsync({ type: 'blob' });
 }

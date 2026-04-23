@@ -3,34 +3,45 @@ import { Outlet, NavLink, Link } from 'react-router-dom';
 export default function App() {
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="no-print sticky top-0 z-20 border-b border-white/10 bg-ink-950/70 backdrop-blur-md">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <Link to="/" className="flex items-center gap-2 font-semibold tracking-tight">
+      <header className="no-print sticky top-0 z-20 border-b border-white/10 bg-ink-950/80 backdrop-blur-md">
+        <div className="mx-auto grid max-w-7xl grid-cols-[1fr_auto_1fr] items-center gap-6 px-6 py-3">
+          <Link to="/" className="flex items-center gap-3 font-semibold tracking-tight">
             <LogoMark />
-            <span className="text-ink-50">SuperSecretSecrets</span>
-            <span className="chip">PQ + Shamir</span>
+            <span className="text-ink-50">superSecretSecrets</span>
+            <span className="hidden text-[10px] uppercase tracking-[0.14em] text-ink-500 sm:inline">
+              v0.1 · client-side only
+            </span>
           </Link>
-          <nav className="flex items-center gap-1 text-sm">
+          <nav className="flex items-center justify-center gap-2 text-xs uppercase tracking-[0.14em]">
             <NavItem to="/encode">Encode</NavItem>
             <NavItem to="/recover">Recover</NavItem>
             <NavItem to="/about">About</NavItem>
           </nav>
+          <div className="hidden justify-end sm:flex">
+            <StatusPill />
+          </div>
         </div>
       </header>
       <main className="flex-1">
         <Outlet />
       </main>
-      <footer className="no-print border-t border-white/5 py-6 text-center text-xs text-ink-400">
-        Everything runs in your browser. No server, no logs, no telemetry.{' '}
+      <footer className="no-print border-t border-white/10 px-6 py-2 text-[10px] uppercase tracking-[0.14em] text-ink-500">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3">
+          <span>ml-kem-768 · aes-256-gcm · shamir gf(2^8)</span>
+          <span className="flex gap-5">
+            <span>no network</span>
+            <span>no server</span>
+            <span>no telemetry</span>
+          </span>
         <a
-          className="underline decoration-dotted hover:text-ink-200"
+          className="text-ink-400 underline decoration-dotted hover:text-accent-200"
           href="https://github.com/junjosick/supersecretsecrets"
           target="_blank"
           rel="noreferrer noopener"
         >
           Source
         </a>
-        .
+        </div>
       </footer>
     </div>
   );
@@ -42,8 +53,10 @@ function NavItem({ to, children }: { to: string; children: React.ReactNode }) {
       to={to}
       className={({ isActive }) =>
         [
-          'rounded-lg px-3 py-1.5 transition-colors',
-          isActive ? 'bg-white/10 text-ink-50' : 'text-ink-300 hover:bg-white/5 hover:text-ink-100',
+          'border px-3 py-1.5 transition-colors',
+          isActive
+            ? 'border-accent-300/50 bg-accent-500/10 text-accent-200'
+            : 'border-transparent text-ink-400 hover:border-white/10 hover:bg-white/[0.03] hover:text-ink-100',
         ].join(' ')
       }
     >
@@ -54,20 +67,22 @@ function NavItem({ to, children }: { to: string; children: React.ReactNode }) {
 
 function LogoMark() {
   return (
-    <svg viewBox="0 0 32 32" className="h-7 w-7" aria-hidden="true">
-      <rect width="32" height="32" rx="7" className="fill-ink-800" />
-      <g className="fill-accent-300">
-        <rect x="5" y="5" width="7" height="7" rx="1" />
-        <rect x="7" y="7" width="3" height="3" className="fill-accent-500" />
-        <rect x="20" y="5" width="7" height="7" rx="1" />
-        <rect x="22" y="7" width="3" height="3" className="fill-accent-500" />
-        <rect x="5" y="20" width="7" height="7" rx="1" />
-        <rect x="7" y="22" width="3" height="3" className="fill-accent-500" />
-        <rect x="15" y="15" width="3" height="3" />
-        <rect x="20" y="17" width="3" height="3" />
-        <rect x="23" y="22" width="3" height="3" />
-        <rect x="17" y="23" width="3" height="3" />
+    <svg viewBox="0 0 32 32" className="h-6 w-6 text-accent-200" aria-hidden="true">
+      <g fill="none" stroke="currentColor" strokeWidth="1.4">
+        <rect x="3.5" y="3.5" width="25" height="25" />
+        <rect x="8.5" y="8.5" width="15" height="15" />
+        <path d="M3.5 16h5M23.5 16h5M16 3.5v5M16 23.5v5" />
       </g>
+      <rect x="14" y="14" width="4" height="4" fill="currentColor" />
     </svg>
+  );
+}
+
+function StatusPill() {
+  return (
+    <div className="inline-flex items-center gap-2 rounded-full border border-white/10 px-3 py-1 text-[10px] uppercase tracking-[0.14em] text-ink-400">
+      <span className="h-1.5 w-1.5 rounded-full bg-accent-300 shadow-glow" />
+      offline · secure
+    </div>
   );
 }

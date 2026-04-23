@@ -1,6 +1,6 @@
 # SuperSecretSecrets
 
-> Turn a secret into QR codes only quantum computers can't read.
+> Turn a secret into QR codes even quantum computers can't read.
 
 A client-side web app that encrypts text with **post-quantum cryptography**
 (ML-KEM / FIPS 203) and splits the key across multiple QR codes using

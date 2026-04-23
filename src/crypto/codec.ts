@@ -211,7 +211,7 @@ export function toBase45(raw: Uint8Array): string {
 }
 
 export function fromBase45(s: string): Uint8Array {
-  const input = s.trim().toUpperCase();
+  const input = s.toUpperCase();
   const digits: number[] = new Array(input.length);
   for (let i = 0; i < input.length; i++) {
     const v = B45_INDEX[input[i]!];
