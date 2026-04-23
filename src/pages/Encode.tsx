@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   encodeSecret,
@@ -125,18 +125,24 @@ export default function Encode() {
               </p>
               <div className="mt-4 space-y-4">
                 <Slider
+                  label="Total recipients (N)"
+                  min={2}
+                  max={12}
+                  value={opts.shares}
+                  onCommit={(v) =>
+                    setOpts({
+                      ...opts,
+                      shares: v,
+                      threshold: Math.min(opts.threshold, v),
+                    })
+                  }
+                />
+                <Slider
                   label="Threshold (T)"
                   min={2}
                   max={opts.shares}
                   value={opts.threshold}
-                  onChange={(v) => setOpts({ ...opts, threshold: v })}
-                />
-                <Slider
-                  label="Total shares (N)"
-                  min={Math.max(opts.threshold, 2)}
-                  max={12}
-                  value={opts.shares}
-                  onChange={(v) => setOpts({ ...opts, shares: v })}
+                  onCommit={(v) => setOpts({ ...opts, threshold: v })}
                 />
               </div>
               <div className="mt-5 grid gap-2" style={{ gridTemplateColumns: `repeat(${opts.shares}, minmax(0, 1fr))` }}>
@@ -317,27 +323,55 @@ function Slider({
   min,
   max,
   value,
-  onChange,
+  onCommit,
 }: {
   label: string;
   min: number;
   max: number;
   value: number;
-  onChange: (v: number) => void;
+  onCommit: (v: number) => void;
 }) {
+  const [draft, setDraft] = useState(value);
+  const [dragging, setDragging] = useState(false);
+
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
+
+  const clamp = (v: number) => Math.min(max, Math.max(min, v));
+  const commit = (raw = draft) => {
+    const snapped = Math.round(clamp(raw));
+    setDraft(snapped);
+    setDragging(false);
+    if (snapped !== value) onCommit(snapped);
+  };
+
   return (
     <div>
       <div className="flex items-center justify-between text-xs text-ink-300">
         <span>{label}</span>
-        <span className="font-mono text-ink-100">{value}</span>
+        <span className="font-mono text-ink-100">
+          {dragging ? `~${clamp(draft).toFixed(1)}` : value}
+        </span>
       </div>
       <input
         className="mt-1.5 w-full accent-accent-500"
         type="range"
         min={min}
         max={max}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
+        step={0.01}
+        value={clamp(draft)}
+        onChange={(e) => {
+          setDragging(true);
+          setDraft(Number(e.target.value));
+        }}
+        onPointerUp={(e) => commit(Number(e.currentTarget.value))}
+        onKeyUp={(e) => {
+          if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') {
+            commit(Number(e.currentTarget.value));
+          }
+        }}
+        onBlur={(e) => commit(Number(e.currentTarget.value))}
       />
     </div>
   );
