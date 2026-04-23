@@ -13,6 +13,7 @@ type ScannedQr = {
   chunkTotal?: number;
   shareIdx?: number;
   threshold?: number;
+  passphraseProtected?: boolean;
 };
 
 type ScanProgress = {
@@ -21,6 +22,7 @@ type ScanProgress = {
   headerChunksTotal: number | null;
   sharesSeen: number;
   threshold: number | null;
+  passphraseRequired: boolean | null;
 };
 
 function hex(b: Uint8Array): string {
@@ -56,6 +58,7 @@ export default function Recover() {
             chunkTotal: isHeader ? parsed.chunkTotal : undefined,
             shareIdx: isShare ? parsed.shareIdx : undefined,
             threshold: isHeader || isShare ? parsed.t : undefined,
+            passphraseProtected: isHeader ? parsed.flags.passphrase : undefined,
             detail: isHeader
               ? `header chunk ${parsed.chunkIdx + 1}/${parsed.chunkTotal}`
               : isShare
@@ -95,11 +98,17 @@ export default function Recover() {
   }, [payloads, passphrase]);
 
   useEffect(() => {
+    if (scanProgress.passphraseRequired === false && passphrase !== '') {
+      setPassphrase('');
+    }
+  }, [passphrase, scanProgress.passphraseRequired]);
+
+  useEffect(() => {
     return () => workerRef.current?.terminate();
   }, []);
 
   const decrypt = () => {
-    if (!scanProgress.ready || decoding) return;
+    if (!scanProgress.ready || decoding || (scanProgress.passphraseRequired && passphrase.length === 0)) return;
     workerRef.current?.terminate();
     const id = ++decodeSeq.current;
     const worker = new Worker(new URL('../workers/decode.worker.ts', import.meta.url), {
@@ -169,19 +178,11 @@ export default function Recover() {
             decrypted={decodeResult?.status === 'ok'}
           />
 
-          <details className="card p-5 open:pb-6">
-            <summary className="cursor-pointer text-sm font-medium text-ink-100">
-              Passphrase (if used during encode)
-            </summary>
-            <input
-              type="password"
-              className="input mt-3"
-              placeholder="leave blank unless encoded with one"
-              value={passphrase}
-              onChange={(e) => setPassphrase(e.target.value)}
-              autoComplete="off"
-            />
-          </details>
+          <PassphrasePanel
+            required={scanProgress.passphraseRequired}
+            passphrase={passphrase}
+            setPassphrase={setPassphrase}
+          />
 
           {scanProgress.ready && decodeResult?.status !== 'ok' && (
             <div className="card border-accent-400/30 bg-accent-500/5 p-5">
@@ -189,8 +190,16 @@ export default function Recover() {
               <p className="mt-2 text-xs leading-6 text-ink-300">
                 Enough QR material has been scanned. Decrypt only when your screen is private.
               </p>
-              <button className="btn-primary mt-4 w-full" onClick={decrypt} disabled={decoding}>
-                {decoding ? 'Decrypting…' : 'Decrypt secret'}
+              <button
+                className="btn-primary mt-4 w-full"
+                onClick={decrypt}
+                disabled={decoding || (scanProgress.passphraseRequired === true && passphrase.length === 0)}
+              >
+                {decoding
+                  ? 'Decrypting…'
+                  : scanProgress.passphraseRequired === true && passphrase.length === 0
+                    ? 'Enter passphrase'
+                    : 'Decrypt secret'}
               </button>
             </div>
           )}
@@ -311,6 +320,7 @@ function getScanProgress(scanned: ScannedQr[]): ScanProgress {
       headerChunksTotal: null,
       sharesSeen: 0,
       threshold: null,
+      passphraseRequired: null,
     };
   }
 
@@ -338,6 +348,9 @@ function getScanProgress(scanned: ScannedQr[]): ScanProgress {
   const headerChunksTotal =
     best.find((s) => s.kind === 'header' && s.chunkTotal !== undefined)?.chunkTotal ?? null;
   const threshold = best.find((s) => s.threshold !== undefined)?.threshold ?? null;
+  const passphraseRequired =
+    best.find((s) => s.kind === 'header' && s.passphraseProtected !== undefined)
+      ?.passphraseProtected ?? null;
 
   return {
     ready:
@@ -349,7 +362,57 @@ function getScanProgress(scanned: ScannedQr[]): ScanProgress {
     headerChunksTotal,
     sharesSeen: shareIndexes.size,
     threshold,
+    passphraseRequired,
   };
+}
+
+function PassphrasePanel({
+  required,
+  passphrase,
+  setPassphrase,
+}: {
+  required: boolean | null;
+  passphrase: string;
+  setPassphrase: (passphrase: string) => void;
+}) {
+  if (required === null) {
+    return (
+      <div className="card p-5">
+        <div className="mono-upper">passphrase</div>
+        <p className="mt-2 text-xs leading-6 text-ink-400">
+          Scan a header QR to detect whether this bundle needs a passphrase.
+        </p>
+      </div>
+    );
+  }
+
+  if (!required) {
+    return (
+      <div className="card border-white/10 bg-white/[0.02] p-5">
+        <div className="mono-upper">passphrase</div>
+        <p className="mt-2 text-xs leading-6 text-ink-400">
+          This bundle was encoded without a passphrase.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card border-amber-300/30 bg-amber-500/5 p-5">
+      <div className="mono-upper text-amber-300">passphrase required</div>
+      <p className="mt-2 text-xs leading-6 text-ink-300">
+        This bundle was encoded with the optional Argon2id passphrase layer.
+      </p>
+      <input
+        type="password"
+        className="input mt-3"
+        placeholder="enter passphrase"
+        value={passphrase}
+        onChange={(e) => setPassphrase(e.target.value)}
+        autoComplete="off"
+      />
+    </div>
+  );
 }
 
 function StatusRow({ label, text }: { label: string; text: string }) {
