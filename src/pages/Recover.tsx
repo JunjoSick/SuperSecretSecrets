@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { QrScanner } from '../components/QrScanner';
-import { inspectQr, type DecodeResult } from '../crypto';
+import { inspectQr, type DecodeBundleResult, type VaultEntry } from '../crypto';
 import { KIND_HEADER, KIND_SHARE } from '../crypto/codec';
+import { triggerDownload } from '../lib/zip';
 
 type ScannedQr = {
   payload: string;
@@ -15,6 +16,14 @@ type ScannedQr = {
   threshold?: number;
   passphraseProtected?: boolean;
 };
+
+type VaultBlobFile = {
+  name: string;
+  bytes: Uint8Array;
+};
+
+type SecretDecodeSuccess = Extract<DecodeBundleResult, { status: 'ok'; kind: 'secret' }>;
+type VaultDecodeSuccess = Extract<DecodeBundleResult, { status: 'ok'; kind: 'vault' }>;
 
 type ScanProgress = {
   ready: boolean;
@@ -31,10 +40,50 @@ function hex(b: Uint8Array): string {
   return s;
 }
 
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
+}
+
+function isTextEntry(entry: VaultEntry): boolean {
+  const type = entry.contentType?.toLowerCase() ?? '';
+  const name = entry.name.toLowerCase();
+  return (
+    type.startsWith('text/') ||
+    type.includes('json') ||
+    name.endsWith('.txt') ||
+    name.endsWith('.md') ||
+    name.endsWith('.json') ||
+    name.endsWith('.csv')
+  );
+}
+
+function entryText(entry: VaultEntry): string | null {
+  if (!isTextEntry(entry)) return null;
+  try {
+    return new TextDecoder().decode(entry.data);
+  } catch {
+    return null;
+  }
+}
+
+function downloadVaultEntry(entry: VaultEntry): void {
+  const copy = new Uint8Array(entry.data);
+  triggerDownload(
+    new Blob([copy.buffer as ArrayBuffer], {
+      type: entry.contentType ?? 'application/octet-stream',
+    }),
+    entry.name || `${entry.id}.bin`,
+  );
+}
+
 export default function Recover() {
   const [scanned, setScanned] = useState<ScannedQr[]>([]);
   const [passphrase, setPassphrase] = useState('');
-  const [decodeResult, setDecodeResult] = useState<DecodeResult | null>(null);
+  const [vaultBlob, setVaultBlob] = useState<VaultBlobFile | null>(null);
+  const [vaultErr, setVaultErr] = useState<string | null>(null);
+  const [decodeResult, setDecodeResult] = useState<DecodeBundleResult | null>(null);
   const [decoding, setDecoding] = useState(false);
   const [revealed, setRevealed] = useState(false);
   const [copyOk, setCopyOk] = useState(false);
@@ -79,6 +128,8 @@ export default function Recover() {
   const clear = () => {
     setScanned([]);
     setPassphrase('');
+    setVaultBlob(null);
+    setVaultErr(null);
     setRevealed(false);
   };
 
@@ -95,7 +146,7 @@ export default function Recover() {
     setDecoding(false);
     setRevealed(false);
     setCopyOk(false);
-  }, [payloads, passphrase]);
+  }, [payloads, passphrase, vaultBlob]);
 
   useEffect(() => {
     if (scanProgress.passphraseRequired === false && passphrase !== '') {
@@ -120,7 +171,7 @@ export default function Recover() {
     setRevealed(false);
     setCopyOk(false);
 
-    worker.onmessage = (event: MessageEvent<{ id: number; result: DecodeResult }>) => {
+    worker.onmessage = (event: MessageEvent<{ id: number; result: DecodeBundleResult }>) => {
       if (event.data.id !== decodeSeq.current) return;
       setDecodeResult(event.data.result);
       setDecoding(false);
@@ -136,14 +187,26 @@ export default function Recover() {
       if (workerRef.current === worker) workerRef.current = null;
     };
 
-    worker.postMessage({ id, payloads, passphrase: passphrase || undefined });
+    worker.postMessage({ id, payloads, passphrase: passphrase || undefined, vaultBlob: vaultBlob?.bytes });
   };
 
   const copy = async () => {
-    if (decodeResult?.status !== 'ok' || !revealed) return;
+    if (decodeResult?.status !== 'ok' || decodeResult.kind !== 'secret' || !revealed) return;
     await navigator.clipboard.writeText(decodeResult.plaintext);
     setCopyOk(true);
     setTimeout(() => setCopyOk(false), 1500);
+  };
+
+  const importVaultBlob = async (file: File | null) => {
+    setVaultErr(null);
+    if (!file) return;
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      setVaultBlob({ name: file.name, bytes });
+    } catch (e) {
+      setVaultErr(e instanceof Error ? e.message : 'could not read vault blob');
+      setVaultBlob(null);
+    }
   };
 
   return (
@@ -178,6 +241,16 @@ export default function Recover() {
             decrypted={decodeResult?.status === 'ok'}
           />
 
+          <VaultBlobPanel
+            vaultBlob={vaultBlob}
+            error={vaultErr}
+            onImport={importVaultBlob}
+            onClear={() => {
+              setVaultBlob(null);
+              setVaultErr(null);
+            }}
+          />
+
           <PassphrasePanel
             required={scanProgress.passphraseRequired}
             passphrase={passphrase}
@@ -199,41 +272,23 @@ export default function Recover() {
                   ? 'Decrypting…'
                   : scanProgress.passphraseRequired === true && passphrase.length === 0
                     ? 'Enter passphrase'
-                    : 'Decrypt secret'}
+                    : 'Decrypt / unlock'}
               </button>
             </div>
           )}
 
-          {decodeResult?.status === 'ok' && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.98 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="card border-accent-400/30 bg-accent-500/5 p-5"
-            >
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-ink-50">Secret recovered</h3>
-                {revealed && (
-                  <button className="btn-outline text-xs" onClick={copy}>
-                    {copyOk ? 'Copied!' : 'Copy'}
-                  </button>
-                )}
-              </div>
-              {!revealed ? (
-                <div className="mt-4 border border-accent-300/20 bg-black/30 p-4">
-                  <p className="text-xs leading-6 text-ink-300">
-                    The plaintext is decrypted locally and held in memory. Reveal it only when your
-                    screen is private.
-                  </p>
-                  <button className="btn-primary mt-4 w-full" onClick={() => setRevealed(true)}>
-                    Reveal plaintext
-                  </button>
-                </div>
-              ) : (
-                <pre className="mt-4 max-h-96 overflow-auto whitespace-pre-wrap break-words border border-accent-300/20 bg-black/40 p-3 font-mono text-sm text-ink-50 [animation:revealNoise_.38s_ease_both]">
-                  {decodeResult.plaintext}
-                </pre>
-              )}
-            </motion.div>
+          {decodeResult?.status === 'ok' && decodeResult.kind === 'secret' && (
+            <SecretRecovered
+              result={decodeResult}
+              revealed={revealed}
+              copyOk={copyOk}
+              onReveal={() => setRevealed(true)}
+              onCopy={copy}
+            />
+          )}
+
+          {decodeResult?.status === 'ok' && decodeResult.kind === 'vault' && (
+            <VaultRecovered result={decodeResult} vaultBlobName={vaultBlob?.name} />
           )}
 
           {decodeResult?.status === 'error' && scanned.length > 0 && (
@@ -244,6 +299,174 @@ export default function Recover() {
         </aside>
       </div>
     </div>
+  );
+}
+
+function VaultBlobPanel({
+  vaultBlob,
+  error,
+  onImport,
+  onClear,
+}: {
+  vaultBlob: VaultBlobFile | null;
+  error: string | null;
+  onImport: (file: File | null) => void;
+  onClear: () => void;
+}) {
+  return (
+    <div className="card p-5">
+      <div className="mono-upper">vault blob</div>
+      {vaultBlob ? (
+        <div className="mt-3 border border-amber-300/20 bg-amber-500/5 px-3 py-2 text-xs">
+          <div className="truncate font-medium text-amber-100">{vaultBlob.name}</div>
+          <div className="mt-1 font-mono text-ink-400">{formatBytes(vaultBlob.bytes.length)}</div>
+          <button className="btn-ghost mt-3 text-xs" type="button" onClick={onClear}>
+            Remove blob
+          </button>
+        </div>
+      ) : (
+        <>
+          <p className="mt-2 text-xs leading-6 text-ink-400">
+            Import the matching <span className="font-mono text-ink-200">.ssssvault</span> file for vault bundles.
+          </p>
+          <label className="btn-outline mt-3 cursor-pointer text-xs">
+            Choose blob
+            <input
+              type="file"
+              accept=".ssssvault,application/octet-stream"
+              className="hidden"
+              onChange={(e) => {
+                void onImport(e.target.files?.[0] ?? null);
+                e.currentTarget.value = '';
+              }}
+            />
+          </label>
+        </>
+      )}
+      {error && <div className="mt-3 text-xs text-red-300">{error}</div>}
+    </div>
+  );
+}
+
+function SecretRecovered({
+  result,
+  revealed,
+  copyOk,
+  onReveal,
+  onCopy,
+}: {
+  result: SecretDecodeSuccess;
+  revealed: boolean;
+  copyOk: boolean;
+  onReveal: () => void;
+  onCopy: () => void;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.98 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className="card border-accent-400/30 bg-accent-500/5 p-5"
+    >
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-ink-50">Secret recovered</h3>
+        {revealed && (
+          <button className="btn-outline text-xs" onClick={onCopy}>
+            {copyOk ? 'Copied!' : 'Copy'}
+          </button>
+        )}
+      </div>
+      {!revealed ? (
+        <div className="mt-4 border border-accent-300/20 bg-black/30 p-4">
+          <p className="text-xs leading-6 text-ink-300">
+            The plaintext is decrypted locally and held in memory. Reveal it only when your screen is private.
+          </p>
+          <button className="btn-primary mt-4 w-full" onClick={onReveal}>
+            Reveal plaintext
+          </button>
+        </div>
+      ) : (
+        <pre className="mt-4 max-h-96 overflow-auto whitespace-pre-wrap break-words border border-accent-300/20 bg-black/40 p-3 font-mono text-sm text-ink-50 [animation:revealNoise_.38s_ease_both]">
+          {result.plaintext}
+        </pre>
+      )}
+    </motion.div>
+  );
+}
+
+function VaultRecovered({
+  result,
+  vaultBlobName,
+}: {
+  result: VaultDecodeSuccess;
+  vaultBlobName?: string;
+}) {
+  const [revealed, setRevealed] = useState<Set<string>>(() => new Set());
+  const toggleReveal = (id: string) => {
+    setRevealed((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.98 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className="card border-amber-300/30 bg-amber-500/5 p-5"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold text-ink-50">Vault unlocked</h3>
+          {vaultBlobName && <div className="mt-1 truncate font-mono text-[10px] text-ink-400">{vaultBlobName}</div>}
+        </div>
+        <span className="chip border-amber-300/30 text-amber-200">
+          {result.vault ? `${result.vault.entries.length} entries` : 'key ready'}
+        </span>
+      </div>
+
+      {!result.vault ? (
+        <div className="mt-4 border border-amber-300/20 bg-black/30 p-4 text-xs leading-6 text-ink-300">
+          Vault key recovered. Import the matching <span className="font-mono text-ink-200">.ssssvault</span> blob to reveal entries.
+        </div>
+      ) : (
+        <div className="mt-4 space-y-3">
+          {result.vault.entries.map((entry) => {
+            const text = entryText(entry);
+            const isRevealed = revealed.has(entry.id);
+            return (
+              <div key={entry.id} className="border border-amber-300/20 bg-black/25 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium text-ink-100">{entry.name}</div>
+                    <div className="mt-1 flex flex-wrap gap-2 text-[10px] uppercase tracking-[0.14em] text-ink-500">
+                      <span>{formatBytes(entry.data.length)}</span>
+                      {entry.contentType && <span>{entry.contentType}</span>}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                    {text !== null && (
+                      <button className="btn-outline px-3 py-1.5 text-[10px]" onClick={() => toggleReveal(entry.id)}>
+                        {isRevealed ? 'Hide' : 'Reveal'}
+                      </button>
+                    )}
+                    <button className="btn-primary px-3 py-1.5 text-[10px]" onClick={() => downloadVaultEntry(entry)}>
+                      Download
+                    </button>
+                  </div>
+                </div>
+                {text !== null && isRevealed && (
+                  <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-words border border-amber-300/20 bg-black/40 p-3 font-mono text-xs text-ink-50 [animation:revealNoise_.38s_ease_both]">
+                    {text}
+                  </pre>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </motion.div>
   );
 }
 
