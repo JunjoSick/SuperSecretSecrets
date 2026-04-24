@@ -30,6 +30,7 @@ export default function Encode() {
   const canGenerate = text.trim().length > 0 && !busy;
   const bytes = useMemo(() => new TextEncoder().encode(text).length, [text]);
   const lines = Math.max(text.split('\n').length, 18);
+  const vaultMode = opts.vaultMode === true;
 
   useEffect(() => {
     setDraftShares(opts.shares);
@@ -59,6 +60,9 @@ export default function Encode() {
 
   const downloadZip = async () => {
     if (!bundle) return;
+    const bid = Array.from(bundle.bundleId)
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
     const files = [
       ...bundle.headerQrs.map((p, i) => ({
         name: `header-${String(i + 1).padStart(2, '0')}-of-${bundle.headerQrs.length}`,
@@ -69,10 +73,10 @@ export default function Encode() {
         payload: p,
       })),
     ];
-    const blob = await buildZip(files, ecc, zipContent);
-    const bid = Array.from(bundle.bundleId)
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('');
+    const attachments = bundle.vaultBlob
+      ? [{ name: `vault-${bid.slice(0, 8)}.ssssvault`, data: bundle.vaultBlob }]
+      : [];
+    const blob = await buildZip(files, ecc, zipContent, attachments);
     triggerDownload(blob, `supersecretsecrets-${bid.slice(0, 8)}.zip`);
   };
 
@@ -162,14 +166,40 @@ export default function Encode() {
               <SharePreview shares={draftShares} threshold={draftThreshold} />
             </div>
 
+            <div className="card p-5">
+              <div className="mono-upper">payload mode</div>
+              <h3 className="mt-2 text-sm font-semibold text-ink-100">
+                {vaultMode ? 'Vault blob' : 'Single secret'}
+              </h3>
+              <p className="mt-1 text-xs leading-5 text-ink-400">
+                {vaultMode
+                  ? 'QR codes unlock an exported .ssssvault file; keep both.'
+                  : 'QR codes carry everything needed to recover this plaintext.'}
+              </p>
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <ModeButton
+                  active={!vaultMode}
+                  label="Single"
+                  detail="QR only"
+                  onClick={() => setOpts({ ...opts, vaultMode: false })}
+                />
+                <ModeButton
+                  active={vaultMode}
+                  label="Vault"
+                  detail="QR + blob"
+                  onClick={() => setOpts({ ...opts, vaultMode: true })}
+                />
+              </div>
+            </div>
+
             <SettingsPanel opts={opts} setOpts={setOpts} ecc={ecc} setEcc={setEcc} />
 
             <div className="card p-5">
               <div className="mono-upper mb-4">pipeline preview</div>
               <PipelineStep idx="01" title="Derive key" body="HKDF / optional Argon2id pass layer" active />
-              <PipelineStep idx="02" title="Encrypt payload" body="AEAD(K, plaintext)" active />
+              <PipelineStep idx="02" title="Encrypt payload" body={vaultMode ? 'AEAD(K, vault root)' : 'AEAD(K, plaintext)'} active />
               <PipelineStep idx="03" title="Encapsulate" body="ML-KEM public-key envelope" />
-              <PipelineStep idx="04" title="Split seed" body="Shamir(K, T, N) → QR shares" />
+              <PipelineStep idx="04" title={vaultMode ? 'Export vault' : 'Split seed'} body={vaultMode ? '.ssssvault blob + QR shares' : 'Shamir(K, T, N) → QR shares'} />
             </div>
 
             <button className="btn-primary py-3 text-base" disabled={!canGenerate} onClick={generate}>
@@ -206,7 +236,19 @@ function BundleView({
   onReset: () => void;
   onDownloadZip: () => void;
 }) {
-  const canDownload = zipContent.svg || zipContent.png || zipContent.txt;
+  const hasVaultBlob = !!bundle.vaultBlob;
+  const canDownload = zipContent.svg || zipContent.png || zipContent.txt || hasVaultBlob;
+  const bid = Array.from(bundle.bundleId)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+  const downloadVaultBlob = () => {
+    if (!bundle.vaultBlob) return;
+    const copy = new Uint8Array(bundle.vaultBlob);
+    triggerDownload(
+      new Blob([copy.buffer as ArrayBuffer], { type: 'application/octet-stream' }),
+      `vault-${bid.slice(0, 8)}.ssssvault`,
+    );
+  };
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -221,6 +263,7 @@ function BundleView({
             {bundle.options.threshold} of {bundle.options.shares}
           </span>
           <span className="chip">ECC {ecc}</span>
+          {hasVaultBlob && <span className="chip border-amber-300/30 text-amber-200">Vault</span>}
           {bundle.headerQrs.length > 1 && (
             <span className="chip">Header × {bundle.headerQrs.length}</span>
           )}
@@ -232,6 +275,11 @@ function BundleView({
           <button className="btn-outline" onClick={() => window.print()}>
             Print
           </button>
+          {hasVaultBlob && (
+            <button className="btn-outline" onClick={downloadVaultBlob}>
+              Download vault
+            </button>
+          )}
           <button className="btn-primary" onClick={onDownloadZip} disabled={!canDownload}>
             Download ZIP
           </button>
@@ -256,13 +304,14 @@ function BundleView({
           checked={zipContent.txt}
           onChange={(checked) => setZipContent({ ...zipContent, txt: checked })}
         />
+        {hasVaultBlob && <span className="chip border-amber-300/30 text-amber-200">.ssssvault included</span>}
         {!canDownload && <span className="text-red-300">Pick at least one format.</span>}
       </fieldset>
 
       <div className="mb-4 border border-dashed border-white/10 bg-white/[0.025] px-4 py-3 text-xs text-ink-400 no-print">
         Scan <strong className="text-ink-200">all {bundle.headerQrs.length} header QR{bundle.headerQrs.length > 1 ? 's' : ''}</strong>{' '}
         plus any <strong className="text-ink-200">{bundle.options.threshold}</strong> of the{' '}
-        {bundle.options.shares} share QRs to recover. Keep trustees physically separated.
+        {bundle.options.shares} share QRs to recover. {hasVaultBlob ? 'Recover also needs the .ssssvault blob.' : 'Keep trustees physically separated.'}
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -311,6 +360,34 @@ function ZipOption({
       />
       {label}
     </label>
+  );
+}
+
+function ModeButton({
+  active,
+  label,
+  detail,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  detail: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={[
+        'border px-3 py-2 text-left transition-colors',
+        active
+          ? 'border-accent-300/60 bg-accent-500/10 text-accent-100'
+          : 'border-white/10 bg-white/[0.025] text-ink-300 hover:border-white/25 hover:bg-white/[0.04]',
+      ].join(' ')}
+    >
+      <div className="text-[11px] font-medium uppercase tracking-[0.12em]">{label}</div>
+      <div className="mt-1 text-[10px] text-ink-500">{detail}</div>
+    </button>
   );
 }
 

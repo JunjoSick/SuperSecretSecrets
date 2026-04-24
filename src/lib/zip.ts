@@ -2,6 +2,7 @@ import JSZip from 'jszip';
 import { renderDataUrl, renderSvg, type EccLevel } from '../qr/generate';
 
 export type BundleFile = { name: string; payload: string };
+export type ZipAttachment = { name: string; data: Uint8Array | string | Blob };
 export type ZipContentOptions = {
   svg: boolean;
   png: boolean;
@@ -27,6 +28,7 @@ export async function buildZip(
   files: BundleFile[],
   ecc: EccLevel = 'M',
   content: ZipContentOptions = DEFAULT_ZIP_CONTENT,
+  attachments: ZipAttachment[] = [],
 ): Promise<Blob> {
   const zip = new JSZip();
   for (const f of files) {
@@ -40,6 +42,9 @@ export async function buildZip(
     if (content.txt) {
       zip.file(`${f.name}.txt`, f.payload);
     }
+  }
+  for (const attachment of attachments) {
+    zip.file(attachment.name, attachment.data);
   }
   return zip.generateAsync({ type: 'blob' });
 }
