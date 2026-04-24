@@ -64,6 +64,16 @@ export default function About() {
         </li>
         <li>Losing more than (N − T) shares — that makes the secret unrecoverable.</li>
         <li>Bad passphrases. If you enable the passphrase option, use a strong one.</li>
+        <li>
+          Losing every copy of a <code className="font-mono text-ink-200">.ssssvault</code>{' '}
+          blob. Vault QR codes unlock an existing blob; they do not contain the
+          editable vault contents.
+        </li>
+        <li>
+          Treating time-locked shares as post-quantum or unconditional. The v2
+          time-lock option depends on drand quicknet threshold honesty and needs
+          network access or imported beacon data at unlock time.
+        </li>
       </ul>
 
       <h2 className="mt-10 text-xl font-medium text-ink-50">Cryptographic defaults</h2>
@@ -74,6 +84,7 @@ export default function About() {
         <Dt>Secret sharing</Dt><Dd>Shamir over GF(2^8) with AES polynomial</Dd>
         <Dt>Default T-of-N</Dt><Dd>3-of-5</Dd>
         <Dt>Passphrase stretching</Dt><Dd>Argon2id (when enabled)</Dd>
+        <Dt>Time locks</Dt><Dd>Opt-in v2 only; drand quicknet; not post-quantum</Dd>
       </dl>
 
       <h2 className="mt-10 text-xl font-medium text-ink-50">Libraries</h2>

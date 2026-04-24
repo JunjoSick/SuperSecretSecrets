@@ -17,6 +17,8 @@ Everything runs in your browser. No server, no accounts, no telemetry.
 - **AES-256-GCM** or **ChaCha20-Poly1305** for payload encryption
 - **HKDF-SHA-256** (or SHA3-256) for key derivation
 - Optional **Argon2id** passphrase layer
+- v2 API support for custodian metadata, weighted/tree policies, vault blobs,
+  and opt-in drand quicknet time-locked shares
 - Encode and decode in-browser: upload images or scan with a camera
 - Safe-by-default (3-of-5, ML-KEM-768, AES-256-GCM); fully configurable
 
@@ -47,6 +49,12 @@ See the in-app [About](./src/pages/About.tsx) page. TL;DR: this protects
 against future quantum adversaries harvesting your encrypted QRs today, and
 against any T-1 trustees cooperating. It does not protect against a
 compromised device at encode or decode time.
+
+Time-locked shares are an opt-in v2 API feature. They are not post-quantum,
+depend on drand quicknet threshold honesty, and require network access or
+imported beacon data at unlock time. Vault QR/header material unlocks an
+existing `.ssssvault` blob; losing every copy of that blob loses the vault
+contents.
 
 ## License
 
