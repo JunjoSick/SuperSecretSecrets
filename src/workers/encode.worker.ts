@@ -2,6 +2,7 @@ import { encodeSecretAsync } from '../crypto';
 import type { EncodeWorkerRequest, WorkerEvent, WorkerProgressEvent } from './protocol';
 
 const cancelled = new Set<number>();
+const controllers = new Map<number, AbortController>();
 
 function post(event: WorkerEvent): void {
   self.postMessage(event);
@@ -11,6 +12,7 @@ self.onmessage = (event: MessageEvent<EncodeWorkerRequest>) => {
   const request = event.data;
   if (request.type === 'cancel') {
     cancelled.add(request.id);
+    controllers.get(request.id)?.abort();
     return;
   }
 
@@ -20,8 +22,11 @@ self.onmessage = (event: MessageEvent<EncodeWorkerRequest>) => {
 async function handleEncode(request: Extract<EncodeWorkerRequest, { type: 'encode' }>): Promise<void> {
   const { id, plaintext, options } = request;
   cancelled.delete(id);
+  const controller = new AbortController();
+  controllers.set(id, controller);
   try {
     const result = await encodeSecretAsync(plaintext, options, {
+      signal: controller.signal,
       onVdfProgress: (progress) => {
         if (cancelled.has(id)) throw new Error('encode cancelled');
         post({
@@ -57,5 +62,6 @@ async function handleEncode(request: Extract<EncodeWorkerRequest, { type: 'encod
     });
   } finally {
     cancelled.delete(id);
+    controllers.delete(id);
   }
 }

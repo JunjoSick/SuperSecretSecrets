@@ -291,10 +291,9 @@ mod ffi {
 
     #[wasm_bindgen]
     pub fn allocate_witness_buffer(len: usize) -> *mut u8 {
-        assert_eq!(
-            len, HALO2_WITNESS_V1_BYTES,
-            "witness buffer must be {HALO2_WITNESS_V1_BYTES} bytes"
-        );
+        if len != HALO2_WITNESS_V1_BYTES {
+            return core::ptr::null_mut();
+        }
         allocate_buffer(len)
     }
 
@@ -333,6 +332,20 @@ mod ffi {
         srs_ptr: *const u8,
         srs_len: usize,
     ) -> Result<Box<[u8]>, JsError> {
+        validate_ptr(
+            encoded_public_inputs_ptr,
+            encoded_public_inputs_len,
+            "encoded public inputs",
+        )?;
+        validate_ptr(witness_ptr, witness_len, "witness")?;
+        validate_ptr(proving_key_ptr, proving_key_len, "proving key")?;
+        validate_ptr(srs_ptr, srs_len, "SRS")?;
+        if witness_len != HALO2_WITNESS_V1_BYTES {
+            return Err(JsError::new(
+                "decryption proof witness buffer has the wrong length",
+            ));
+        }
+
         // SAFETY: pointers come from JS `wasm.memory`; the TS wrapper ensures
         // the ranges are valid and live for the duration of this call.
         let encoded_public_inputs = unsafe {
@@ -368,6 +381,13 @@ mod ffi {
         })?
         .map(Vec::into_boxed_slice)
         .map_err(|e| JsError::new(&e.to_string()))
+    }
+
+    fn validate_ptr<T>(ptr: *const T, len: usize, label: &'static str) -> Result<(), JsError> {
+        if len > 0 && ptr.is_null() {
+            return Err(JsError::new(&format!("{label} pointer is null")));
+        }
+        Ok(())
     }
 
     #[cfg(feature = "panic-hook")]

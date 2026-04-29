@@ -10,6 +10,7 @@ import {
   DECRYPTION_PROOF_ENVELOPE_VERSION,
   DECRYPTION_PROOF_SCHEME_HALO2_KZG,
   ML_KEM_768_CIPHERTEXT_BYTES,
+  RELATION_V1_DIGEST,
   RELATION_V1_VAULTROOT_ONLY_DIGEST,
   RELATION_V1_VAULTROOT_ONLY_ID,
   digestDecryptionProofRelation,
@@ -92,6 +93,16 @@ describe('Halo2 backend vaultroot-only relation', () => {
   });
 
   it('rejects unknown relation digests at artifact validation time', () => {
+    expect(() =>
+      createHalo2DecryptionProofVerifier({
+        artifact: {
+          ...sampleVerifierArtifact(),
+          metadata: { ...sampleMetadata(), relationDigest: RELATION_V1_DIGEST },
+        },
+        wasm: { verify_decryption_proof_v1: () => true },
+      }),
+    ).toThrow(/relation digest/);
+
     expect(() =>
       createHalo2DecryptionProofVerifier({
         artifact: {

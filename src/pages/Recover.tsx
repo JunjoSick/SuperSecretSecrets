@@ -778,7 +778,7 @@ function decryptionProofStatus(
         tone: 'ok',
         chip: 'verified',
         title: 'Verified auditor decryption proof',
-        body: `Verified: this v3 vault-root bundle was encrypted under ML-KEM-768 + HKDF-SHA256 + AES-256-GCM using the committed recovery seed path, and the recovered vault root matches the published plaintext commitment.${
+        body: `Verified: this v3 vault-root bundle matches the registered proof relation, transcript digest, and published Poseidon2 proof-facing commitments. The current Halo2 milestone proves the vault-root commitment and transcript binding.${
           proof.label ? ` Verifier: ${proof.label}.` : ''
         }`,
       };

@@ -8,8 +8,8 @@ import type { DecryptionProofProver } from '../../src/crypto/zk/decryption-proof
 import {
   DECRYPTION_PROOF_SCHEME_TEST_MOCK,
   ML_KEM_SEED_BYTES,
-  RELATION_V1_DIGEST,
-  RELATION_V1_ID,
+  RELATION_V1_VAULTROOT_ONLY_DIGEST,
+  RELATION_V1_VAULTROOT_ONLY_ID,
   VAULT_ROOT_KEY_BYTES,
 } from '../../src/crypto/zk/decryption-proof-relations';
 import {
@@ -40,8 +40,8 @@ export function createMockDecryptionProofEnvelope(
     envelopeVersion: 1,
     schemeId: DECRYPTION_PROOF_SCHEME_TEST_MOCK,
     flags: DECRYPTION_PROOF_FLAG_TEST_ONLY,
-    relationId: RELATION_V1_ID,
-    relationDigest: RELATION_V1_DIGEST,
+    relationId: RELATION_V1_VAULTROOT_ONLY_ID,
+    relationDigest: RELATION_V1_VAULTROOT_ONLY_DIGEST,
     verifierArtifactDigest: MOCK_DECRYPTION_PROOF_VERIFIER_ARTIFACT_DIGEST,
     transcriptDigest,
     proofBytes: mockProofBytes(transcriptDigest),
@@ -50,8 +50,8 @@ export function createMockDecryptionProofEnvelope(
 
 export const mockDecryptionProofVerifier: DecryptionProofVerifier = {
   schemeId: DECRYPTION_PROOF_SCHEME_TEST_MOCK,
-  relationId: RELATION_V1_ID,
-  relationDigest: RELATION_V1_DIGEST,
+  relationId: RELATION_V1_VAULTROOT_ONLY_ID,
+  relationDigest: RELATION_V1_VAULTROOT_ONLY_DIGEST,
   verifierArtifactDigest: MOCK_DECRYPTION_PROOF_VERIFIER_ARTIFACT_DIGEST,
   async verifyEnvelopeV1({ envelope, publicInputs, signal }): Promise<DecryptionProofVerificationResult> {
     if (signal?.aborted) return { status: 'failed', reason: 'mock proof verification aborted' };
@@ -68,8 +68,8 @@ export const mockDecryptionProofVerifier: DecryptionProofVerifier = {
 
 export const mockDecryptionProofProver: DecryptionProofProver = {
   schemeId: DECRYPTION_PROOF_SCHEME_TEST_MOCK,
-  relationId: RELATION_V1_ID,
-  relationDigest: RELATION_V1_DIGEST,
+  relationId: RELATION_V1_VAULTROOT_ONLY_ID,
+  relationDigest: RELATION_V1_VAULTROOT_ONLY_DIGEST,
   verifierArtifactDigest: MOCK_DECRYPTION_PROOF_VERIFIER_ARTIFACT_DIGEST,
   async proveV1(input) {
     if (input.signal?.aborted) throw new Error('mock proof generation aborted');

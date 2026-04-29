@@ -459,7 +459,7 @@ function proofUiState(opts: EncodeOptions): {
       badge: 'relation ready',
       title: 'Ready for a QR-carried proof backend.',
       body:
-        'These settings match the first decryption-proof relation. This build still needs a bundled prover before it can attach the proof TLV.',
+        'These settings match the current vault-root proof relation. This build still needs a bundled prover before it can attach the proof TLV.',
       pipeline: 'Relation ready; prover backend not bundled',
       card: 'border-accent-300/30 bg-accent-500/5',
       chip: 'border-accent-300/30 text-accent-200',
@@ -645,7 +645,7 @@ function BundleView({
             {proofState.ready ? 'proof-ready settings' : 'commitments only'}
           </span>
           <span className="leading-5 text-ink-300">
-            This bundle includes v3 commitments and share proofs. A full decryption-proof TLV is emitted only when a local prover backend is configured.
+            This bundle includes v3 commitments and share proofs. An auditor proof TLV is emitted only when a local prover backend is configured.
           </span>
         </div>
       )}

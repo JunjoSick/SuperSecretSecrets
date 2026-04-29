@@ -2,6 +2,7 @@ import { decodeBundleAsync } from '../crypto';
 import type { DecodeWorkerRequest, WorkerEvent, WorkerProgressEvent } from './protocol';
 
 const cancelled = new Set<number>();
+const controllers = new Map<number, AbortController>();
 
 function post(event: WorkerEvent): void {
   self.postMessage(event);
@@ -11,6 +12,7 @@ self.onmessage = (event: MessageEvent<DecodeWorkerRequest>) => {
   const request = event.data;
   if (request.type === 'cancel') {
     cancelled.add(request.id);
+    controllers.get(request.id)?.abort();
     return;
   }
 
@@ -20,10 +22,13 @@ self.onmessage = (event: MessageEvent<DecodeWorkerRequest>) => {
 async function handleDecode(request: Extract<DecodeWorkerRequest, { type: 'decode' }>): Promise<void> {
   const { id, payloads, passphrase, vaultBlob } = request;
   cancelled.delete(id);
+  const controller = new AbortController();
+  controllers.set(id, controller);
   try {
     const result = await decodeBundleAsync(payloads, {
       passphrase,
       vaultBlob,
+      signal: controller.signal,
       onVdfProgress: (progress) => {
         if (cancelled.has(id)) throw new Error('decode cancelled');
         post({
@@ -60,5 +65,6 @@ async function handleDecode(request: Extract<DecodeWorkerRequest, { type: 'decod
     });
   } finally {
     cancelled.delete(id);
+    controllers.delete(id);
   }
 }

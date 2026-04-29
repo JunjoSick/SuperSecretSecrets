@@ -21,6 +21,8 @@ import {
   DECRYPTION_PROOF_SCHEME_HALO2_KZG,
   RELATION_V1_DIGEST,
   RELATION_V1_ID,
+  RELATION_V1_VAULTROOT_ONLY_DIGEST,
+  RELATION_V1_VAULTROOT_ONLY_ID,
 } from '../src/crypto/zk/decryption-proof-relations';
 import {
   digestDecryptionProofPublicInputsV1,
@@ -149,12 +151,65 @@ describe('v3 decryption proof integration', () => {
     ).rejects.toThrow(/prover/);
   });
 
+  it('rejects provers that still claim the future full relation', async () => {
+    await expect(
+      encodeSecretAsync('wrong relation prover', {
+        ...PROOF_FAST,
+        decryptionProof: {
+          enabled: true,
+          prover: {
+            ...mockDecryptionProofProver,
+            relationId: RELATION_V1_ID,
+            relationDigest: RELATION_V1_DIGEST,
+          },
+          verifiers: [mockDecryptionProofVerifier],
+        },
+      }),
+    ).rejects.toThrow(/current supported relation/);
+  });
+
+  it('passes cancellation signals into proof generation and local verification', async () => {
+    const controller = new AbortController();
+    let proverSignal: AbortSignal | undefined;
+    let verifierSignal: AbortSignal | undefined;
+    const verifier: DecryptionProofVerifier = {
+      ...mockDecryptionProofVerifier,
+      async verifyEnvelopeV1({ signal }) {
+        verifierSignal = signal;
+        return { status: 'verified' };
+      },
+    };
+
+    const bundle = await encodeSecretAsync(
+      'signal proof path',
+      {
+        ...PROOF_FAST,
+        decryptionProof: {
+          enabled: true,
+          prover: {
+            ...mockDecryptionProofProver,
+            async proveV1(input) {
+              proverSignal = input.signal;
+              return mockDecryptionProofProver.proveV1(input);
+            },
+          },
+          verifiers: [verifier],
+        },
+      },
+      { signal: controller.signal },
+    );
+
+    expect(bundle.formatVersion).toBe(3);
+    expect(proverSignal).toBe(controller.signal);
+    expect(verifierSignal).toBe(controller.signal);
+  });
+
   it('emits non-test proof envelopes once supported bundles publish Poseidon2 commitments', async () => {
     let proverCalled = false;
     const verifier: DecryptionProofVerifier = {
       schemeId: DECRYPTION_PROOF_SCHEME_HALO2_KZG,
-      relationId: RELATION_V1_ID,
-      relationDigest: RELATION_V1_DIGEST,
+      relationId: RELATION_V1_VAULTROOT_ONLY_ID,
+      relationDigest: RELATION_V1_VAULTROOT_ONLY_DIGEST,
       verifierArtifactDigest: MOCK_DECRYPTION_PROOF_VERIFIER_ARTIFACT_DIGEST,
       async verifyEnvelopeV1({ envelope, publicInputs }) {
         const expected = mockProofBytes(digestDecryptionProofPublicInputsV1(publicInputs));
@@ -178,8 +233,8 @@ describe('v3 decryption proof integration', () => {
               envelopeVersion: 1,
               schemeId: DECRYPTION_PROOF_SCHEME_HALO2_KZG,
               flags: 0,
-              relationId: RELATION_V1_ID,
-              relationDigest: RELATION_V1_DIGEST,
+              relationId: RELATION_V1_VAULTROOT_ONLY_ID,
+              relationDigest: RELATION_V1_VAULTROOT_ONLY_DIGEST,
               verifierArtifactDigest: MOCK_DECRYPTION_PROOF_VERIFIER_ARTIFACT_DIGEST,
               transcriptDigest,
               proofBytes: mockProofBytes(transcriptDigest),

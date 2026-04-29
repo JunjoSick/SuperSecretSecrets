@@ -54,7 +54,7 @@ export type DecryptionProofSupportInput = {
 };
 
 export type DecryptionProofSupport =
-  | { supported: true; relationId: typeof RELATION_V1_ID }
+  | { supported: true; relationId: typeof RELATION_V1_VAULTROOT_ONLY_ID }
   | { supported: false; reason: string };
 
 export function digestDecryptionProofRelation(
@@ -67,9 +67,7 @@ export function digestDecryptionProofRelation(
 export const RELATION_V1_DIGEST = digestDecryptionProofRelation();
 export const RELATION_V1_VAULTROOT_ONLY_DIGEST = digestDecryptionProofRelation(RELATION_V1_VAULTROOT_ONLY_ID);
 
-export type SupportedHalo2RelationId =
-  | typeof RELATION_V1_ID
-  | typeof RELATION_V1_VAULTROOT_ONLY_ID;
+export type SupportedHalo2RelationId = typeof RELATION_V1_VAULTROOT_ONLY_ID;
 
 export type SupportedHalo2Relation = {
   id: SupportedHalo2RelationId;
@@ -77,7 +75,6 @@ export type SupportedHalo2Relation = {
 };
 
 export const SUPPORTED_HALO2_RELATIONS: readonly SupportedHalo2Relation[] = [
-  { id: RELATION_V1_ID, digest: RELATION_V1_DIGEST },
   { id: RELATION_V1_VAULTROOT_ONLY_ID, digest: RELATION_V1_VAULTROOT_ONLY_DIGEST },
 ] as const;
 
@@ -89,6 +86,16 @@ export function lookupSupportedHalo2Relation(
     if (constantTimeBytesEqual(digest, relation.digest)) return relation;
   }
   return null;
+}
+
+export function proofFacingCommitmentsUsePoseidon2Bn254(
+  relationDigest: Uint8Array,
+): boolean {
+  return (
+    relationDigest instanceof Uint8Array &&
+    (constantTimeBytesEqual(relationDigest, RELATION_V1_DIGEST) ||
+      constantTimeBytesEqual(relationDigest, RELATION_V1_VAULTROOT_ONLY_DIGEST))
+  );
 }
 
 function constantTimeBytesEqual(a: Uint8Array, b: Uint8Array): boolean {
@@ -119,7 +126,7 @@ export function getSupportedDecryptionProofRelation(
   if (input.passphrase) {
     return { supported: false, reason: 'first proof relation does not support passphrase bundles' };
   }
-  return { supported: true, relationId: RELATION_V1_ID };
+  return { supported: true, relationId: RELATION_V1_VAULTROOT_ONLY_ID };
 }
 
 function u16LengthPrefixed(bytes: Uint8Array): Uint8Array {

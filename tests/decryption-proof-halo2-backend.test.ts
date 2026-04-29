@@ -10,8 +10,8 @@ import {
   DECRYPTION_PROOF_ENVELOPE_VERSION,
   DECRYPTION_PROOF_SCHEME_HALO2_KZG,
   ML_KEM_768_CIPHERTEXT_BYTES,
-  RELATION_V1_DIGEST,
-  RELATION_V1_ID,
+  RELATION_V1_VAULTROOT_ONLY_DIGEST,
+  RELATION_V1_VAULTROOT_ONLY_ID,
 } from '../src/crypto/zk/decryption-proof-relations';
 import {
   digestDecryptionProofPublicInputsV1,
@@ -146,9 +146,9 @@ describe('Halo2 backend artifact and WASM wrappers', () => {
       envelopeVersion: DECRYPTION_PROOF_ENVELOPE_VERSION,
       schemeId: DECRYPTION_PROOF_SCHEME_HALO2_KZG,
       flags: DECRYPTION_PROOF_FLAG_EXTERNAL_ARTIFACT | DECRYPTION_PROOF_FLAG_TRUSTED_SETUP,
-      relationId: RELATION_V1_ID,
+      relationId: RELATION_V1_VAULTROOT_ONLY_ID,
     });
-    expect(envelope.relationDigest).toEqual(RELATION_V1_DIGEST);
+    expect(envelope.relationDigest).toEqual(RELATION_V1_VAULTROOT_ONLY_DIGEST);
     expect(envelope.verifierArtifactDigest).toEqual(digestHalo2ArtifactMetadata(artifact.metadata));
     expect(envelope.transcriptDigest).toEqual(digestDecryptionProofPublicInputsV1(publicInputs));
     expect(envelope.proofBytes).toEqual(FakeHalo2WasmProver.PROOF_BYTES);
@@ -288,7 +288,7 @@ function sampleMetadata(args: {
 }): Halo2ArtifactMetadata {
   return {
     schemeId: DECRYPTION_PROOF_SCHEME_HALO2_KZG,
-    relationDigest: RELATION_V1_DIGEST,
+    relationDigest: RELATION_V1_VAULTROOT_ONLY_DIGEST,
     pcsId: PCS_KZG,
     curveId: CURVE_BN254,
     trustedSetupIdDigest: sha256(args.trustedSetupIdBytes),
@@ -308,8 +308,8 @@ function sampleEnvelope(
     envelopeVersion: DECRYPTION_PROOF_ENVELOPE_VERSION,
     schemeId: DECRYPTION_PROOF_SCHEME_HALO2_KZG,
     flags: DECRYPTION_PROOF_FLAG_EXTERNAL_ARTIFACT | DECRYPTION_PROOF_FLAG_TRUSTED_SETUP,
-    relationId: RELATION_V1_ID,
-    relationDigest: RELATION_V1_DIGEST,
+    relationId: RELATION_V1_VAULTROOT_ONLY_ID,
+    relationDigest: RELATION_V1_VAULTROOT_ONLY_DIGEST,
     verifierArtifactDigest: digestHalo2ArtifactMetadata(artifact.metadata),
     transcriptDigest: digestDecryptionProofPublicInputsV1(publicInputs),
     proofBytes: bytes(96, 80),

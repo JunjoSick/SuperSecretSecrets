@@ -9,8 +9,8 @@ import type { DecryptionProofProver } from '../decryption-proof-prover';
 import {
   DECRYPTION_PROOF_ENVELOPE_VERSION,
   DECRYPTION_PROOF_SCHEME_HALO2_KZG,
-  RELATION_V1_DIGEST,
-  RELATION_V1_ID,
+  RELATION_V1_VAULTROOT_ONLY_DIGEST,
+  RELATION_V1_VAULTROOT_ONLY_ID,
   lookupSupportedHalo2Relation,
   type SupportedHalo2Relation,
 } from '../decryption-proof-relations';
@@ -251,8 +251,8 @@ export function createHalo2DecryptionProofProver(args: CreateHalo2ProverArgs): D
 export function createUnavailableHalo2DecryptionProofProver(): DecryptionProofProver {
   return {
     schemeId: DECRYPTION_PROOF_SCHEME_HALO2_KZG,
-    relationId: RELATION_V1_ID,
-    relationDigest: RELATION_V1_DIGEST,
+    relationId: RELATION_V1_VAULTROOT_ONLY_ID,
+    relationDigest: RELATION_V1_VAULTROOT_ONLY_DIGEST,
     verifierArtifactDigest: new Uint8Array(32),
     async proveV1(): Promise<DecryptionProofEnvelope> {
       throw new Error(HALO2_BACKEND_NOT_BUNDLED);

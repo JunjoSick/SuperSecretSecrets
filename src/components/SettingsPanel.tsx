@@ -277,9 +277,9 @@ function proofReadiness(opts: EncodeOptions): {
     return {
       summary: 'ready',
       kickerText: 'proof relation ready',
-      title: 'This bundle can carry the v3 auditor proof.',
+      title: 'This bundle matches the proof-backed vault format.',
       body:
-        'The selected vault-root relation matches ML-KEM-768, HKDF-SHA256, AES-256-GCM, and no passphrase. Proof emission still needs a bundled prover backend.',
+        'The selected vault-root settings match the current proof transcript and Poseidon2 commitment format. Proof emission still needs a bundled prover backend.',
       card: 'border-accent-300/30 bg-accent-500/5',
       chip: 'border-accent-300/30 text-accent-200',
       kicker: 'text-accent-300',
@@ -296,7 +296,7 @@ function proofReadiness(opts: EncodeOptions): {
     summary: 'not eligible',
     kickerText: 'proof relation gated',
     title: 'Adjust settings before proof emission.',
-    body: `The first proof relation needs ${blockers.join(', ')}. Recovery and v3 commitments still work without a decryption proof.`,
+    body: `The current proof relation needs ${blockers.join(', ')}. Recovery and v3 commitments still work without a decryption proof.`,
     card: 'border-amber-300/25 bg-amber-500/5',
     chip: 'border-amber-300/30 text-amber-200',
     kicker: 'text-amber-300',

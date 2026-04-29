@@ -63,6 +63,7 @@ by the native tests. Both paths require the generated `srs.bin` alongside
 |---|---|
 | Workspace + Cargo manifests | done |
 | Poseidon2-BN254 reference impl | done (passes existing TS vectors) |
+| C0 shared arithmetization architecture | documented in `C0_ARITHMETIZATION.md`; full relation blocked pending measured C3-C7 rows |
 | TLV decoder for `DecryptionProofPublicInputsV1` | done |
 | Witness layout (`HALO2_WITNESS_V1_BYTES`) | done |
 | Vault-root plaintext commitment helper | done |
@@ -78,7 +79,9 @@ The `RELATION_V1_ID` digest is bound to the full
 `mlkem768-hkdfsha256-aes256gcm-poseidon2bn254-vaultroot-nopass`
 construction. Shipping a circuit that only constrains the Poseidon2
 commitment under that id would lie about its semantics. The new id
-(`sss-v3-poseidon2bn254-vaultroot-only-v1`) is plumbed through
-`SUPPORTED_HALO2_RELATIONS` in `decryption-proof-relations.ts`, so the
-TS verifier accepts artifacts under either relation but the envelope
-carries the honest one.
+(`sss-v3-poseidon2bn254-vaultroot-only-v1`) is the only Halo2 artifact
+relation accepted by `SUPPORTED_HALO2_RELATIONS` until the full in-circuit
+ML-KEM/HKDF/AES relation exists. The app still recognizes both relation
+digests as Poseidon2 proof-facing commitment formats when decoding old or
+test envelopes, but bundled Halo2 artifacts must carry the honest
+vaultroot-only relation.

@@ -74,7 +74,8 @@ import type {
   DecryptionProofProver,
 } from './zk/decryption-proof-prover';
 import {
-  RELATION_V1_DIGEST,
+  RELATION_V1_VAULTROOT_ONLY_DIGEST,
+  proofFacingCommitmentsUsePoseidon2Bn254,
   getSupportedDecryptionProofRelation,
 } from './zk/decryption-proof-relations';
 import {
@@ -208,6 +209,7 @@ export type ZkProgressInfo = {
 export type EncodeRuntimeOptions = {
   onVdfProgress?: (info: VdfProgressInfo) => void;
   onDecryptionProofProgress?: (event: DecryptionProofProgressEvent) => void;
+  signal?: AbortSignal;
 };
 
 export const DEFAULT_OPTIONS: EncodeOptions = {
@@ -545,6 +547,7 @@ async function encodeSecretV2Async(
   opts: EncodeOptions,
   runtime: EncodeRuntimeOptions,
 ): Promise<EncodedBundle> {
+  if (runtime.signal?.aborted) throw new Error('encode cancelled');
   const custodians = effectiveCustodians(opts);
   const totalPoints = custodians.reduce((sum, c) => sum + (c.weight ?? 1), 0);
   if (totalPoints > 255) throw new Error('weighted point count must be <= 255');
@@ -649,6 +652,12 @@ async function encodeSecretV2Async(
     const proofOptions = opts.decryptionProof;
     if (!proofOptions?.prover) throw new Error('decryption proof prover is required for supported bundles');
     const { prover } = proofOptions;
+    if (
+      prover.relationId !== proofSupport.relationId ||
+      !bytesEqual(prover.relationDigest, RELATION_V1_VAULTROOT_ONLY_DIGEST)
+    ) {
+      throw new Error('decryption proof prover relation does not match the current supported relation');
+    }
     if (!policyCommitRoot || !ptCommit || !vaultTreeRootBytes || !vaultRootKeyForProof) {
       throw new Error('decryption proof requires v3 vault-root commitments');
     }
@@ -680,17 +689,22 @@ async function encodeSecretV2Async(
       vaultRootKey: vaultRootKeyForProof.slice(),
     };
     try {
+      if (runtime.signal?.aborted) throw new Error('encode cancelled');
       const envelope = await prover.proveV1({
         publicInputs,
         witness,
+        signal: runtime.signal,
         onProgress: runtime.onDecryptionProofProgress,
       });
+      if (runtime.signal?.aborted) throw new Error('encode cancelled');
       runtime.onDecryptionProofProgress?.({ phase: 'local-verifying' });
       const verification = await verifyDecryptionProofEnvelopeV1({
         envelope,
         publicInputs,
         verifiers: proofOptions.verifiers,
+        signal: runtime.signal,
       });
+      if (runtime.signal?.aborted) throw new Error('encode cancelled');
       if (verification.status !== 'verified') {
         throw new Error(`local decryption proof verification failed: ${verification.reason}`);
       }
@@ -1394,7 +1408,7 @@ function decodeV2Parsed(parsed: ParsedQr[], opts: DecodeBundleOptions): DecodeBu
   const decryptionProofRaw = tlvValue(firstHeader, TLV_DECRYPTION_PROOF);
   const vaultTreeRootRaw = tlvValue(firstHeader, TLV_VAULT_TREE_ROOT);
   const proofUsesPoseidon2Commitments = decryptionProofRaw
-    ? canonicalProofUsesRelationV1(decryptionProofRaw)
+    ? canonicalProofUsesPoseidon2Commitments(decryptionProofRaw)
     : false;
   let zkDone = 0;
   const zkTotal =
@@ -1800,9 +1814,11 @@ function inspectCanonicalDecryptionProofSync(args: {
   };
 }
 
-function canonicalProofUsesRelationV1(proofRaw: Uint8Array): boolean {
+function canonicalProofUsesPoseidon2Commitments(proofRaw: Uint8Array): boolean {
   try {
-    return bytesEqual(decodeCanonicalDecryptionProofEnvelope(proofRaw).relationDigest, RELATION_V1_DIGEST);
+    return proofFacingCommitmentsUsePoseidon2Bn254(
+      decodeCanonicalDecryptionProofEnvelope(proofRaw).relationDigest,
+    );
   } catch {
     return false;
   }
@@ -1870,7 +1886,7 @@ function prepareCanonicalDecryptionProofPublicInputs(args: {
   | { status: 'error'; error: string } {
   try {
     const envelope = decodeCanonicalDecryptionProofEnvelope(args.proofRaw);
-    if (!bytesEqual(envelope.relationDigest, RELATION_V1_DIGEST)) {
+    if (!proofFacingCommitmentsUsePoseidon2Bn254(envelope.relationDigest)) {
       return { status: 'ok', schemeId: envelope.schemeId, envelope };
     }
     if (!args.policyCommitment) return { status: 'error', error: 'decryption proof requires a policy commitment' };

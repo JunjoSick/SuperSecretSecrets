@@ -20,7 +20,7 @@ import {
 } from '../src/crypto/zk/halo2/artifact';
 import {
   DECRYPTION_PROOF_SCHEME_HALO2_KZG,
-  RELATION_V1_DIGEST,
+  RELATION_V1_VAULTROOT_ONLY_DIGEST,
 } from '../src/crypto/zk/decryption-proof-relations';
 
 const DOMAIN_LEN = new TextEncoder().encode(HALO2_VERIFIER_ARTIFACT_DIGEST_DOMAIN).length;
@@ -39,7 +39,7 @@ describe('Halo2 verifier artifact metadata', () => {
       2,
       3,
     ]);
-    expect(encoded.slice(2 + DOMAIN_LEN + 6, 2 + DOMAIN_LEN + 6 + 32)).toEqual(RELATION_V1_DIGEST);
+    expect(encoded.slice(2 + DOMAIN_LEN + 6, 2 + DOMAIN_LEN + 6 + 32)).toEqual(RELATION_V1_VAULTROOT_ONLY_DIGEST);
     expect(encoded.length).toBe(2 + DOMAIN_LEN + 6 + 32 * 4);
   });
 
@@ -136,7 +136,7 @@ describe('Halo2 verifier artifact metadata', () => {
 function sampleMetadata(): Halo2ArtifactMetadata {
   return {
     schemeId: DECRYPTION_PROOF_SCHEME_HALO2_KZG,
-    relationDigest: RELATION_V1_DIGEST,
+    relationDigest: RELATION_V1_VAULTROOT_ONLY_DIGEST,
     pcsId: PCS_KZG,
     curveId: CURVE_BN254,
     trustedSetupIdDigest: bytes(32, 10),

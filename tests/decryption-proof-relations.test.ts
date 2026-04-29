@@ -8,8 +8,11 @@ import {
   PROOF_KDF_ID_HKDF_SHA256,
   RELATION_V1_DIGEST,
   RELATION_V1_ID,
+  RELATION_V1_VAULTROOT_ONLY_DIGEST,
+  RELATION_V1_VAULTROOT_ONLY_ID,
   digestDecryptionProofRelation,
   getSupportedDecryptionProofRelation,
+  proofFacingCommitmentsUsePoseidon2Bn254,
   type DecryptionProofSupportInput,
 } from '../src/crypto/zk/decryption-proof-relations';
 
@@ -26,7 +29,7 @@ describe('decryption proof relation support', () => {
   it('supports only the first v3 vault-root no-passphrase relation', () => {
     expect(getSupportedDecryptionProofRelation(base)).toEqual({
       supported: true,
-      relationId: RELATION_V1_ID,
+      relationId: RELATION_V1_VAULTROOT_ONLY_ID,
     });
   });
 
@@ -64,5 +67,12 @@ describe('decryption proof relation support', () => {
     expect(RELATION_V1_DIGEST.length).toBe(32);
     expect(digestDecryptionProofRelation()).toEqual(RELATION_V1_DIGEST);
     expect(digestDecryptionProofRelation(`${RELATION_V1_ID}-changed`)).not.toEqual(RELATION_V1_DIGEST);
+    expect(digestDecryptionProofRelation(RELATION_V1_VAULTROOT_ONLY_ID)).toEqual(RELATION_V1_VAULTROOT_ONLY_DIGEST);
+  });
+
+  it('recognizes Poseidon2 proof-facing commitment relations separately from supported Halo2 artifacts', () => {
+    expect(proofFacingCommitmentsUsePoseidon2Bn254(RELATION_V1_DIGEST)).toBe(true);
+    expect(proofFacingCommitmentsUsePoseidon2Bn254(RELATION_V1_VAULTROOT_ONLY_DIGEST)).toBe(true);
+    expect(proofFacingCommitmentsUsePoseidon2Bn254(new Uint8Array(32))).toBe(false);
   });
 });
