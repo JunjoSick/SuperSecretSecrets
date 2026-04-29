@@ -71,8 +71,10 @@
   }
 
   .btn {
-    @apply inline-flex items-center justify-center gap-2 border px-4 py-2 text-xs font-medium uppercase tracking-[0.14em] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-300 focus-visible:ring-offset-2 focus-visible:ring-offset-ink-950 disabled:pointer-events-none disabled:opacity-50;
+    @apply inline-flex max-w-full items-center justify-center gap-2 border px-4 py-2 text-center text-xs font-medium uppercase leading-5 tracking-[0.08em] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-300 focus-visible:ring-offset-2 focus-visible:ring-offset-ink-950 disabled:pointer-events-none disabled:opacity-50;
     border-radius: 2px;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   .btn-primary {
@@ -93,8 +95,9 @@
   }
 
   .chip {
-    @apply inline-flex items-center gap-1.5 border border-white/10 bg-white/[0.04] px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.14em] text-ink-300;
+    @apply inline-flex max-w-full items-center gap-1.5 border border-white/10 bg-white/[0.04] px-2.5 py-0.5 text-[10px] font-medium uppercase leading-4 tracking-[0.08em] text-ink-300;
     border-radius: 999px;
+    overflow-wrap: anywhere;
   }
 
   .kbd {
@@ -102,7 +105,7 @@
   }
 
   .mono-upper {
-    @apply text-[10px] font-medium uppercase tracking-[0.14em] text-ink-500;
+    @apply text-[10px] font-medium uppercase leading-4 tracking-[0.08em] text-ink-500;
   }
 
   .hair {

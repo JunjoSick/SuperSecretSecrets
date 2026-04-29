@@ -19,6 +19,11 @@ Everything runs in your browser. No server, no accounts, no telemetry.
 - Optional **Argon2id** passphrase layer
 - v2 API support for custodian metadata, weighted/tree policies, vault blobs,
   and opt-in drand quicknet time-locked shares
+- Opt-in v3 ZK commitments for policy/plaintext/vault integrity, per-share
+  Schnorr opening proofs, vault disclosure proofs, and per-share Wesolowski
+  VDF locks that run off the UI thread with local runtime estimates
+- Image secrets are stored as single-entry vault payloads, preserving exact
+  bytes by default with an explicit metadata-stripping option
 - Encode and decode in-browser: upload images or scan with a camera
 - Safe-by-default (3-of-5, ML-KEM-768, AES-256-GCM); fully configurable
 
@@ -37,7 +42,7 @@ npm run build      # type-check + production build
 src/
 ├── crypto/        # pq, aead, kdf, shamir, codec, high-level encode/decode
 ├── qr/            # QR generation (qrcode) + scanning (jsqr)
-├── pages/         # Landing, Encode, Recover, About
+├── pages/         # Landing, Encode, Recover, Verify, About
 ├── components/    # QrCard, QrScanner, SettingsPanel
 └── lib/           # zip download, misc
 tests/             # crypto, codec, shamir, and QR-roundtrip tests
@@ -50,11 +55,12 @@ against future quantum adversaries harvesting your encrypted QRs today, and
 against any T-1 trustees cooperating. It does not protect against a
 compromised device at encode or decode time.
 
-Time-locked shares are an opt-in v2 API feature. They are not post-quantum,
-depend on drand quicknet threshold honesty, and require network access or
-imported beacon data at unlock time. Vault QR/header material unlocks an
-existing `.ssssvault` blob; losing every copy of that blob loses the vault
-contents.
+Time-locked shares are opt-in. v2 drand locks are not post-quantum, depend on
+drand quicknet threshold honesty, and require network access or imported beacon
+data at unlock time. v3 VDF locks are also not post-quantum; they provide a
+sequential-delay cost, not an absolute wall-clock guarantee. Vault QR/header
+material unlocks an existing `.ssssvault` blob; losing every copy of that blob
+loses the vault contents.
 
 ## License
 

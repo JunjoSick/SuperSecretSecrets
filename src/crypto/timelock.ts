@@ -74,3 +74,77 @@ export function decodeTimeLockInfo(raw: Uint8Array): TimeLockInfo {
     security: TIMELOCK_SECURITY_NOTICE,
   };
 }
+
+export const VDF_TIMELOCK_SECURITY_NOTICE = [
+  'VDF time-locks are not post-quantum.',
+  'Encoder waits the same T sequential squarings as the unlocker.',
+  'ASIC attackers may evaluate sequential squarings 3-10× faster than browser JS.',
+] as const;
+
+export type VdfTimeLockInfo = {
+  scheme: 'wesolowski-classgroup';
+  discriminantBits: number;
+  T: bigint;
+  paramsTlvDigest: Uint8Array;
+  security: typeof VDF_TIMELOCK_SECURITY_NOTICE;
+};
+
+export type VdfTimeLockAdapter = {
+  lock(plaintext: Uint8Array, info: VdfTimeLockInfo): Uint8Array;
+  unlock(ciphertext: Uint8Array, info: VdfTimeLockInfo): Uint8Array;
+};
+
+function hex(bytes: Uint8Array): string {
+  let out = '';
+  for (const b of bytes) out += b.toString(16).padStart(2, '0');
+  return out;
+}
+
+function unhex(s: string): Uint8Array {
+  if (s.length % 2 !== 0) throw new Error('hex string must have even length');
+  const out = new Uint8Array(s.length / 2);
+  for (let i = 0; i < out.length; i++) {
+    const byte = parseInt(s.slice(i * 2, i * 2 + 2), 16);
+    if (Number.isNaN(byte)) throw new Error('invalid hex character');
+    out[i] = byte;
+  }
+  return out;
+}
+
+export function encodeVdfTimeLockInfo(info: VdfTimeLockInfo): Uint8Array {
+  if (info.scheme !== 'wesolowski-classgroup') throw new Error('unsupported VDF scheme');
+  if (!Number.isInteger(info.discriminantBits) || info.discriminantBits < 64) {
+    throw new Error('discriminantBits must be a positive integer ≥ 64');
+  }
+  if (info.T < 0n) throw new Error('T must be non-negative');
+  if (info.paramsTlvDigest.length !== 32) throw new Error('paramsTlvDigest must be 32 bytes');
+  return enc.encode(
+    JSON.stringify({
+      scheme: info.scheme,
+      discriminantBits: info.discriminantBits,
+      T: info.T.toString(),
+      paramsTlvDigest: hex(info.paramsTlvDigest),
+    }),
+  );
+}
+
+export function decodeVdfTimeLockInfo(raw: Uint8Array): VdfTimeLockInfo {
+  const parsed = JSON.parse(dec.decode(raw));
+  if (parsed.scheme !== 'wesolowski-classgroup') throw new Error('unsupported VDF scheme');
+  if (!Number.isInteger(parsed.discriminantBits) || parsed.discriminantBits < 64) {
+    throw new Error('discriminantBits must be ≥ 64');
+  }
+  if (typeof parsed.T !== 'string') throw new Error('T must be a decimal string');
+  const T = BigInt(parsed.T);
+  if (T < 0n) throw new Error('T must be non-negative');
+  if (typeof parsed.paramsTlvDigest !== 'string') throw new Error('paramsTlvDigest must be hex string');
+  const digest = unhex(parsed.paramsTlvDigest);
+  if (digest.length !== 32) throw new Error('paramsTlvDigest must be 32 bytes');
+  return {
+    scheme: 'wesolowski-classgroup',
+    discriminantBits: parsed.discriminantBits,
+    T,
+    paramsTlvDigest: digest,
+    security: VDF_TIMELOCK_SECURITY_NOTICE,
+  };
+}

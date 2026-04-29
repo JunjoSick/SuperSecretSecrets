@@ -53,6 +53,22 @@ export default function About() {
           <strong className="text-ink-100">Tampering.</strong> AEAD tags detect
           any modification to the ciphertext.
         </li>
+        <li>
+          <strong className="text-ink-100">Post-publication tampering of v3 bundles.</strong>{' '}
+          When the optional v3 ZK commitments are enabled, the policy manifest,
+          plaintext, and vault structure are each bound by a Merkle/SHA-256 commitment
+          embedded in the header. The decoder rejects bundles whose recovered values
+          don't match the published commitments.
+        </li>
+        <li>
+          <strong className="text-ink-100">Premature recovery (with VDF time-lock).</strong>{' '}
+          When the optional Wesolowski class-group VDF is enabled, each share is
+          encrypted under a key derived from <code className="font-mono">y = g<sup>2<sup>T</sup></sup></code>{' '}
+          in a class group of unknown order. No trapdoor exists, so any recoverer
+          (including the original encoder) must perform T sequential squarings to
+          unlock the share. No trusted setup; the discriminant{' '}
+          <code className="font-mono">Δ = -p</code> is sampled per-bundle.
+        </li>
       </ul>
 
       <h2 className="mt-10 text-xl font-medium text-ink-50">What it does NOT protect against</h2>
@@ -74,6 +90,30 @@ export default function About() {
           time-lock option depends on drand quicknet threshold honesty and needs
           network access or imported beacon data at unlock time.
         </li>
+        <li>
+          <strong className="text-ink-100">Treating v3 ZK commitments as post-quantum.</strong>{' '}
+          The v3 commitments use SHA-256 Merkle trees and the Schnorr/Pedersen
+          stack over Ristretto255 — none of which is post-quantum. A future
+          quantum adversary holding a stored bundle could forge per-share
+          commitments and policy roots. The KEM/AEAD payload itself remains
+          PQ-safe; the ZK layer is auxiliary integrity, not confidentiality.
+        </li>
+        <li>
+          <strong className="text-ink-100">VDF time-locks as ASIC-resistant.</strong>{' '}
+          Browser JS executes one squaring per few microseconds. Custom
+          sequential-circuit hardware can plausibly run 3–10× faster, so the
+          wall-clock margin is best understood as a delay <em>against your own
+          hardware</em>, not a hard cryptographic guarantee. VDF math is also
+          not post-quantum (the security rests on the unknown order of the
+          class group).
+        </li>
+        <li>
+          <strong className="text-ink-100">Encoder cost for VDF.</strong>{' '}
+          With a per-bundle random discriminant there is no trapdoor, so the
+          encoder pays the same T squarings as the unlocker. Pick small T for
+          interactive demos (≤ 2¹⁶) and use a Web Worker for real wall-clock
+          delays (≥ 2²⁵).
+        </li>
       </ul>
 
       <h2 className="mt-10 text-xl font-medium text-ink-50">Cryptographic defaults</h2>
@@ -85,6 +125,8 @@ export default function About() {
         <Dt>Default T-of-N</Dt><Dd>3-of-5</Dd>
         <Dt>Passphrase stretching</Dt><Dd>Argon2id (when enabled)</Dd>
         <Dt>Time locks</Dt><Dd>Opt-in v2 only; drand quicknet; not post-quantum</Dd>
+        <Dt>v3 ZK commitments</Dt><Dd>Opt-in: SHA-256 Merkle + Pedersen/Schnorr over Ristretto255</Dd>
+        <Dt>v3 VDF time-lock</Dt><Dd>Opt-in: Wesolowski over class groups, per-bundle Δ = -p</Dd>
       </dl>
 
       <h2 className="mt-10 text-xl font-medium text-ink-50">Libraries</h2>

@@ -1,0 +1,56 @@
+{
+  "hash": "poseidon2",
+  "field": "bn254-scalar",
+  "paramsId": "sss-v3-poseidon2-bn254-v1",
+  "width": "4",
+  "rate": "3",
+  "capacity": "1",
+  "roundsFull": "8",
+  "roundsPartial": "56",
+  "mdsMatrixDigest": "66009b3dde100734a94b470238f34f3300894bd666a8c5845d8e0b672ea5d373",
+  "roundConstantsDigest": "a113481f5f579ad1e1d61f70257ad90c271993130aadb7318b53147336b1db36",
+  "vectors": [
+    {
+      "name": "empty-input",
+      "domain": "SSS/v3/poseidon2-bn254/test/empty",
+      "inputsHex": [],
+      "outputHex": "25ffd6691cbb647ccaff3b92a0fb5ac007477192f3f6bbe239a4a56b67d54161"
+    },
+    {
+      "name": "one-input",
+      "domain": "SSS/v3/poseidon2-bn254/test/one",
+      "inputsHex": [
+        "0000000000000000000000000000000000000000000000000000000000000001"
+      ],
+      "outputHex": "2cc910731319ed88d20fcd862dc3b6a9cdde1ac649f589b6c193a26ed8c8a855"
+    },
+    {
+      "name": "three-inputs",
+      "domain": "SSS/v3/poseidon2-bn254/test/three",
+      "inputsHex": [
+        "0000000000000000000000000000000000000000000000000000000000000001",
+        "0000000000000000000000000000000000000000000000000000000000000002",
+        "0000000000000000000000000000000000000000000000000000000000000003"
+      ],
+      "outputHex": "29c41a335685b07d387a2118d9cfaada26d93b7cbda3fc546a583b620d43869a"
+    },
+    {
+      "name": "vault-root-plaintext",
+      "domain": "SSS/v3/poseidon2-bn254/plaintext-vault-root/v1",
+      "inputsHex": [
+        "0000000000000000000000000000000000000000000000000102030405060708",
+        "00000000000000000000000000000000101112131415161718191a1b1c1d1e1f",
+        "00000000000000000000000000000000202122232425262728292a2b2c2d2e2f"
+      ],
+      "outputHex": "2db6001d488d82c6dbc2ac92637a93841473ef4f61f3ecb3ac6c114487d771c5"
+    },
+    {
+      "name": "max-field",
+      "domain": "SSS/v3/poseidon2-bn254/test/max",
+      "inputsHex": [
+        "30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000000"
+      ],
+      "outputHex": "2a47462ea6e85857a4c6a21a02c4d85390d0ad8e78f72eb062db84d9aa3ebee8"
+    }
+  ]
+}

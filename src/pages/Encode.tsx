@@ -1,13 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
-  encodeSecret,
   DEFAULT_OPTIONS,
   type EncodeOptions,
   type EncodedBundle,
+  type VaultEntry,
 } from '../crypto';
 import { QrCard } from '../components/QrCard';
 import { SettingsPanel } from '../components/SettingsPanel';
+import { WorkerProgressCard } from '../components/WorkerProgress';
 import {
   buildZip,
   DEFAULT_ZIP_CONTENT,
@@ -15,6 +16,16 @@ import {
   type ZipContentOptions,
 } from '../lib/zip';
 import type { EccLevel } from '../qr/generate';
+import type { EncodeWorkerRequest, WorkerEvent, WorkerProgressEvent } from '../workers/protocol';
+
+type ImagePayload = {
+  id: string;
+  name: string;
+  contentType: string;
+  data: Uint8Array;
+  previewUrl: string;
+  metadataMode: 'preserve' | 'stripped';
+};
 
 export default function Encode() {
   const [text, setText] = useState('');
@@ -26,36 +37,139 @@ export default function Encode() {
   const [err, setErr] = useState<string | null>(null);
   const [draftShares, setDraftShares] = useState(opts.shares);
   const [draftThreshold, setDraftThreshold] = useState(opts.threshold);
+  const [encodeProgress, setEncodeProgress] = useState<WorkerProgressEvent | null>(null);
+  const [imagePayload, setImagePayload] = useState<ImagePayload | null>(null);
+  const [stripImageMetadata, setStripImageMetadata] = useState(false);
+  const encodeSeq = useRef(0);
+  const workerRef = useRef<Worker | null>(null);
 
-  const canGenerate = text.trim().length > 0 && !busy;
+  const canGenerate = (text.trim().length > 0 || imagePayload !== null) && !busy;
   const bytes = useMemo(() => new TextEncoder().encode(text).length, [text]);
   const lines = Math.max(text.split('\n').length, 18);
-  const vaultMode = opts.vaultMode === true;
+  const vaultMode = opts.vaultMode === true || imagePayload !== null;
+  const proofState = proofUiState({ ...opts, vaultMode });
 
   useEffect(() => {
     setDraftShares(opts.shares);
     setDraftThreshold(opts.threshold);
   }, [opts.shares, opts.threshold]);
 
-  const generate = async () => {
+  useEffect(() => {
+    return () => workerRef.current?.terminate();
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (imagePayload?.previewUrl) URL.revokeObjectURL(imagePayload.previewUrl);
+    };
+  }, [imagePayload?.previewUrl]);
+
+  const finishWorker = (worker: Worker) => {
+    worker.terminate();
+    if (workerRef.current === worker) workerRef.current = null;
+  };
+
+  const generate = () => {
+    if (!canGenerate) return;
+    workerRef.current?.terminate();
+    const id = ++encodeSeq.current;
+    const worker = new Worker(new URL('../workers/encode.worker.ts', import.meta.url), {
+      type: 'module',
+    });
+    workerRef.current = worker;
     setErr(null);
     setBusy(true);
     setBundle(null);
-    try {
-      // Next tick so the UI shows the busy state
-      await new Promise((r) => setTimeout(r, 10));
-      const b = encodeSecret(text, opts);
-      setBundle(b);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    } finally {
+    setEncodeProgress(null);
+
+    const selectedImage = imagePayload;
+    const imageEntry = selectedImage ? imagePayloadToVaultEntry(selectedImage) : null;
+    const requestOptions: Partial<EncodeOptions> = imageEntry
+      ? { ...opts, vaultMode: true, vaultEntries: [imageEntry] }
+      : opts;
+    const plaintext = selectedImage ? selectedImage.name : text;
+
+    worker.onmessage = (event: MessageEvent<WorkerEvent>) => {
+      if (event.data.id !== encodeSeq.current) return;
+      if (event.data.type === 'progress') {
+        setEncodeProgress(event.data);
+        return;
+      }
+      if (event.data.type === 'result' && event.data.op === 'encode') {
+        setBundle(event.data.result);
+      } else if (event.data.type === 'error') {
+        setErr(event.data.error);
+      }
       setBusy(false);
+      setEncodeProgress(null);
+      finishWorker(worker);
+    };
+
+    worker.onerror = () => {
+      if (id !== encodeSeq.current) return;
+      setErr('encode worker failed');
+      setBusy(false);
+      setEncodeProgress(null);
+      finishWorker(worker);
+    };
+
+    worker.postMessage({
+      type: 'encode',
+      id,
+      plaintext,
+      options: requestOptions,
+    } satisfies EncodeWorkerRequest);
+  };
+
+  const cancelGenerate = () => {
+    const worker = workerRef.current;
+    if (worker) {
+      worker.postMessage({ type: 'cancel', id: encodeSeq.current } satisfies EncodeWorkerRequest);
+      worker.terminate();
+      workerRef.current = null;
     }
+    encodeSeq.current++;
+    setBusy(false);
+    setEncodeProgress(null);
   };
 
   const reset = () => {
+    cancelGenerate();
     setBundle(null);
     setErr(null);
+  };
+
+  const importImage = async (file: File | null) => {
+    setErr(null);
+    if (!file) return;
+    if (!file.type.toLowerCase().startsWith('image/')) {
+      setErr('choose an image file');
+      return;
+    }
+    try {
+      const sanitized = stripImageMetadata ? await stripImageFileMetadata(file) : null;
+      const bytes = sanitized?.data ?? new Uint8Array(await file.arrayBuffer());
+      const contentType = sanitized?.contentType ?? file.type ?? 'application/octet-stream';
+      const name = sanitized?.name ?? file.name ?? 'image';
+      const previewBlob = new Blob([bytes.slice().buffer as ArrayBuffer], { type: contentType });
+      setImagePayload({
+        id: 'image',
+        name,
+        contentType,
+        data: bytes,
+        previewUrl: URL.createObjectURL(previewBlob),
+        metadataMode: sanitized ? 'stripped' : 'preserve',
+      });
+      setOpts((current) => ({ ...current, vaultMode: true }));
+      setBundle(null);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'could not read image');
+    }
+  };
+
+  const clearImagePayload = () => {
+    setImagePayload(null);
+    setBundle(null);
   };
 
   const downloadZip = async () => {
@@ -84,17 +198,16 @@ export default function Encode() {
     <div className="mx-auto max-w-7xl px-6 pb-24 pt-10">
       <header className="mb-6 flex items-end justify-between gap-4 no-print">
         <div>
-          <div className="mono-upper">01 · Plaintext / parameters</div>
-          <h1 className="mt-2 text-3xl font-medium tracking-tight text-ink-50">Paste the payload to seal.</h1>
-          <p className="mt-1 text-sm text-ink-400">
-            Your text, a post-quantum key, and a T-of-N split — all computed in
-            your browser.
+          <div className="mono-upper">01 · encode</div>
+          <h1 className="mt-2 text-3xl font-medium tracking-tight text-ink-50">Seal a secret into recoverable QR shares.</h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-ink-400">
+            Build a local-only bundle with post-quantum encapsulation, threshold recovery, optional vault export, and v3 audit commitments.
           </p>
         </div>
       </header>
 
       {!bundle ? (
-        <div className="grid gap-6 lg:grid-cols-[1fr_390px]">
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(320px,410px)]">
           <section className="card overflow-hidden">
             <label className="block">
               <span className="block border-b border-white/10 px-4 py-3 text-[10px] font-medium uppercase tracking-[0.14em] text-ink-400">
@@ -116,10 +229,20 @@ export default function Encode() {
                 />
               </div>
             </label>
+            <ImagePayloadPanel
+              image={imagePayload}
+              stripMetadata={stripImageMetadata}
+              onStripMetadataChange={setStripImageMetadata}
+              onImport={importImage}
+              onClear={clearImagePayload}
+            />
             <div className="flex items-center justify-between border-t border-white/10 bg-white/[0.035] px-4 py-2 text-[10px] uppercase tracking-[0.14em] text-ink-500">
               <span>
-                {bytes} byte{bytes === 1 ? '' : 's'}
-                {bytes > 1024 && ' · header will span multiple QR codes'}
+                {imagePayload
+                  ? `${formatBytes(imagePayload.data.length)} image · ${
+                      imagePayload.metadataMode === 'stripped' ? 'metadata stripped' : 'exact bytes'
+                    }`
+                  : `${bytes} byte${bytes === 1 ? '' : 's'}${bytes > 1024 ? ' · header will span multiple QR codes' : ''}`}
               </span>
               {err && <span className="text-red-300">{err}</span>}
             </div>
@@ -181,7 +304,10 @@ export default function Encode() {
                   active={!vaultMode}
                   label="Single"
                   detail="QR only"
-                  onClick={() => setOpts({ ...opts, vaultMode: false })}
+                  onClick={() => {
+                    clearImagePayload();
+                    setOpts({ ...opts, vaultMode: false, vaultEntries: undefined });
+                  }}
                 />
                 <ModeButton
                   active={vaultMode}
@@ -196,15 +322,51 @@ export default function Encode() {
 
             <div className="card p-5">
               <div className="mono-upper mb-4">pipeline preview</div>
-              <PipelineStep idx="01" title="Derive key" body="HKDF / optional Argon2id pass layer" active />
-              <PipelineStep idx="02" title="Encrypt payload" body={vaultMode ? 'AEAD(K, vault root)' : 'AEAD(K, plaintext)'} active />
-              <PipelineStep idx="03" title="Encapsulate" body="ML-KEM public-key envelope" />
-              <PipelineStep idx="04" title={vaultMode ? 'Export vault' : 'Split seed'} body={vaultMode ? '.ssssvault blob + QR shares' : 'Shamir(K, T, N) → QR shares'} />
+              <PipelineStep idx="01" title="Derive key" body="HKDF with optional Argon2id pass layer" active />
+              <PipelineStep idx="02" title="Encrypt payload" body={vaultMode ? 'AEAD over the vault root key' : 'AEAD over the plaintext'} active />
+              <PipelineStep idx="03" title="Encapsulate" body="ML-KEM public-key recovery envelope" active />
+              <PipelineStep idx="04" title={vaultMode ? 'Export vault' : 'Split seed'} body={vaultMode ? 'Vault blob plus QR shares' : 'Shamir threshold shares'} active />
+              {opts.zk && (
+                <PipelineStep idx="05" title="Commit v3 state" body="Policy, plaintext, shares, and vault tree" active />
+              )}
+              {opts.vdf && (
+                <PipelineStep idx={opts.zk ? '06' : '05'} title="VDF-lock shares" body="Sequential class-group delay per share" active />
+              )}
+              <PipelineStep
+                idx={opts.vdf ? (opts.zk ? '07' : '06') : opts.zk ? '06' : '05'}
+                title="Audit proof"
+                body={proofState.pipeline}
+                active={proofState.ready}
+              />
             </div>
 
-            <button className="btn-primary py-3 text-base" disabled={!canGenerate} onClick={generate}>
-              {busy ? 'Encrypting…' : 'Generate QR codes'}
-            </button>
+            <div className={['card p-5', proofState.card].join(' ')}>
+              <div className={['mono-upper', proofState.kicker].join(' ')}>auditor proof</div>
+              <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
+                <h3 className="min-w-0 text-sm font-semibold leading-5 text-ink-100">{proofState.title}</h3>
+                <span className={['chip', proofState.chip].join(' ')}>{proofState.badge}</span>
+              </div>
+              <p className="mt-2 text-xs leading-6 text-ink-400">{proofState.body}</p>
+            </div>
+
+            {busy && (
+              <WorkerProgressCard
+                title="Generating bundle"
+                fallback="Preparing cryptographic material."
+                progress={encodeProgress}
+              />
+            )}
+
+            <div className={busy ? 'grid grid-cols-[1fr_auto] gap-2' : ''}>
+              <button className="btn-primary py-3 text-base" disabled={!canGenerate} onClick={generate}>
+                {busy ? 'Generating…' : 'Generate QR codes'}
+              </button>
+              {busy && (
+                <button className="btn-outline py-3 text-sm" type="button" onClick={cancelGenerate}>
+                  Cancel
+                </button>
+              )}
+            </div>
           </aside>
         </div>
       ) : (
@@ -216,6 +378,169 @@ export default function Encode() {
           onReset={reset}
           onDownloadZip={downloadZip}
         />
+      )}
+    </div>
+  );
+}
+
+async function stripImageFileMetadata(
+  file: File,
+): Promise<{ data: Uint8Array; contentType: string; name: string }> {
+  const bitmap = await createImageBitmap(file);
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('could not create image canvas');
+    ctx.drawImage(bitmap, 0, 0);
+    const contentType = file.type.toLowerCase() === 'image/jpeg' ? 'image/jpeg' : 'image/png';
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (result) => {
+          if (result) resolve(result);
+          else reject(new Error('could not strip image metadata'));
+        },
+        contentType,
+        contentType === 'image/jpeg' ? 0.92 : undefined,
+      );
+    });
+    return {
+      data: new Uint8Array(await blob.arrayBuffer()),
+      contentType,
+      name: imageNameForContentType(file.name || 'image', contentType),
+    };
+  } finally {
+    bitmap.close();
+  }
+}
+
+function imageNameForContentType(name: string, contentType: string): string {
+  const base = name.replace(/\.[^.]*$/, '') || 'image';
+  if (contentType === 'image/jpeg') return `${base}.jpg`;
+  return `${base}.png`;
+}
+
+function imagePayloadToVaultEntry(image: ImagePayload): VaultEntry {
+  return {
+    id: image.id,
+    name: image.name,
+    contentType: image.contentType,
+    data: image.data,
+  };
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
+}
+
+function proofUiState(opts: EncodeOptions): {
+  ready: boolean;
+  badge: string;
+  title: string;
+  body: string;
+  pipeline: string;
+  card: string;
+  chip: string;
+  kicker: string;
+} {
+  const passphraseEnabled = !!(opts.passphrase && opts.passphrase.length > 0);
+  const ready =
+    opts.vaultMode === true &&
+    opts.kemAlg === 'ml-kem-768' &&
+    opts.aeadAlg === 'aes-256-gcm' &&
+    opts.kdfAlg === 'hkdf-sha256' &&
+    !passphraseEnabled;
+  if (ready) {
+    return {
+      ready: true,
+      badge: 'relation ready',
+      title: 'Ready for a QR-carried proof backend.',
+      body:
+        'These settings match the first decryption-proof relation. This build still needs a bundled prover before it can attach the proof TLV.',
+      pipeline: 'Relation ready; prover backend not bundled',
+      card: 'border-accent-300/30 bg-accent-500/5',
+      chip: 'border-accent-300/30 text-accent-200',
+      kicker: 'text-accent-300',
+    };
+  }
+  return {
+    ready: false,
+    badge: 'not eligible',
+    title: 'Proof emission is gated by the current settings.',
+    body:
+      'The first relation requires vault mode, ML-KEM-768, HKDF-SHA256, AES-256-GCM, and no passphrase. Recovery and commitments remain available.',
+    pipeline: 'Unavailable for the selected relation',
+    card: 'border-white/10 bg-white/[0.02]',
+    chip: 'border-white/10 text-ink-400',
+    kicker: 'text-ink-500',
+  };
+}
+
+function ImagePayloadPanel({
+  image,
+  stripMetadata,
+  onStripMetadataChange,
+  onImport,
+  onClear,
+}: {
+  image: ImagePayload | null;
+  stripMetadata: boolean;
+  onStripMetadataChange: (strip: boolean) => void;
+  onImport: (file: File | null) => void;
+  onClear: () => void;
+}) {
+  return (
+    <div className="border-t border-white/10 bg-black/10 px-4 py-3">
+      {!image ? (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="text-[10px] font-medium uppercase tracking-[0.14em] text-ink-400">
+              image payload
+            </div>
+            <label className="mt-2 inline-flex items-center gap-2 text-xs text-ink-300">
+              <input
+                type="checkbox"
+                checked={stripMetadata}
+                onChange={(e) => onStripMetadataChange(e.target.checked)}
+              />
+              Strip metadata
+            </label>
+          </div>
+          <label className="btn-outline cursor-pointer text-xs">
+            Choose image
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                void onImport(e.target.files?.[0] ?? null);
+                e.currentTarget.value = '';
+              }}
+            />
+          </label>
+        </div>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-[112px_1fr_auto] sm:items-center">
+          <img
+            src={image.previewUrl}
+            alt=""
+            className="h-24 w-28 border border-white/10 object-contain"
+          />
+          <div className="min-w-0">
+            <div className="truncate text-sm font-medium text-ink-100">{image.name}</div>
+            <div className="mt-1 flex flex-wrap gap-2 text-[10px] uppercase tracking-[0.14em] text-ink-500">
+              <span>{formatBytes(image.data.length)}</span>
+              <span>{image.contentType}</span>
+              <span>{image.metadataMode === 'stripped' ? 'stripped' : 'exact bytes'}</span>
+            </div>
+          </div>
+          <button type="button" className="btn-ghost text-xs" onClick={onClear}>
+            Remove
+          </button>
+        </div>
       )}
     </div>
   );
@@ -237,6 +562,7 @@ function BundleView({
   onDownloadZip: () => void;
 }) {
   const hasVaultBlob = !!bundle.vaultBlob;
+  const proofState = proofUiState(bundle.options);
   const canDownload = zipContent.svg || zipContent.png || zipContent.txt || hasVaultBlob;
   const bid = Array.from(bundle.bundleId)
     .map((b) => b.toString(16).padStart(2, '0'))
@@ -313,6 +639,16 @@ function BundleView({
         plus any <strong className="text-ink-200">{bundle.options.threshold}</strong> of the{' '}
         {bundle.options.shares} share QRs to recover. {hasVaultBlob ? 'Recover also needs the .ssssvault blob.' : 'Keep trustees physically separated.'}
       </div>
+      {bundle.options.zk && (
+        <div className="mb-4 grid gap-3 border border-amber-300/20 bg-amber-500/5 px-4 py-3 text-xs text-amber-100 no-print md:grid-cols-[auto_1fr] md:items-center">
+          <span className={['chip', proofState.ready ? 'border-accent-300/30 text-accent-200' : 'border-amber-300/30 text-amber-200'].join(' ')}>
+            {proofState.ready ? 'proof-ready settings' : 'commitments only'}
+          </span>
+          <span className="leading-5 text-ink-300">
+            This bundle includes v3 commitments and share proofs. A full decryption-proof TLV is emitted only when a local prover backend is configured.
+          </span>
+        </div>
+      )}
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {bundle.headerQrs.map((p, i) => (
@@ -385,8 +721,8 @@ function ModeButton({
           : 'border-white/10 bg-white/[0.025] text-ink-300 hover:border-white/25 hover:bg-white/[0.04]',
       ].join(' ')}
     >
-      <div className="text-[11px] font-medium uppercase tracking-[0.12em]">{label}</div>
-      <div className="mt-1 text-[10px] text-ink-500">{detail}</div>
+      <div className="break-words text-[11px] font-medium uppercase leading-4 tracking-[0.08em]">{label}</div>
+      <div className="mt-1 break-words text-[10px] leading-4 text-ink-500">{detail}</div>
     </button>
   );
 }
@@ -488,13 +824,13 @@ function PipelineStep({
   active?: boolean;
 }) {
   return (
-    <div className="mb-4 grid grid-cols-[2rem_1fr] gap-3">
+    <div className="mb-4 grid grid-cols-[2rem_minmax(0,1fr)] gap-3">
       <div className={['pt-0.5 text-[10px] uppercase tracking-[0.14em]', active ? 'text-accent-300' : 'text-ink-500'].join(' ')}>
         {idx}
       </div>
-      <div>
-        <div className={['text-xs font-medium', active ? 'text-ink-100' : 'text-ink-300'].join(' ')}>{title}</div>
-        <div className="mt-1 text-[11px] text-ink-500">{body}</div>
+      <div className="min-w-0">
+        <div className={['break-words text-xs font-medium leading-5', active ? 'text-ink-100' : 'text-ink-300'].join(' ')}>{title}</div>
+        <div className="mt-1 break-words text-[11px] leading-5 text-ink-500">{body}</div>
       </div>
     </div>
   );

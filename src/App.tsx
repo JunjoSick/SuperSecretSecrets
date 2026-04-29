@@ -15,6 +15,7 @@ export default function App() {
           <nav className="flex items-center justify-center gap-2 text-xs uppercase tracking-[0.14em]">
             <NavItem to="/encode">Encode</NavItem>
             <NavItem to="/recover">Recover</NavItem>
+            <NavItem to="/verify">Verify</NavItem>
             <NavItem to="/about">About</NavItem>
           </nav>
           <div className="hidden justify-end sm:flex">
