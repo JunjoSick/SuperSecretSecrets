@@ -5,8 +5,9 @@ Real Halo2 + WASM artifact pipeline for the SSS v3 decryption proof.
 This workspace targets the `sss-v3-poseidon2bn254-vaultroot-only-v1`
 relation as the first deliverable — a strict subset of the full
 `RELATION_V1_ID` that only constrains the Poseidon2-BN254 commitment of
-the vault-root key. The full ML-KEM-768 + HKDF-SHA256 + AES-GCM in-circuit
-relation is a future milestone tracked in
+the vault-root key, plus the high/low 128-bit limbs of the canonical
+public-input transcript digest as public instances. The full ML-KEM-768 +
+HKDF-SHA256 + AES-GCM in-circuit relation is a future milestone tracked in
 `../../supersecretsecrets_v3_decryption_proof_spec_updated_v3.md` §13.
 
 ## Layout
@@ -66,6 +67,7 @@ by the native tests. Both paths require the generated `srs.bin` alongside
 | Witness layout (`HALO2_WITNESS_V1_BYTES`) | done |
 | Vault-root plaintext commitment helper | done |
 | In-circuit `VaultRootCommitmentCircuit` (halo2 chip) | done (MockProver tests) |
+| Transcript digest public-instance binding | done (high/low 128-bit limbs) |
 | KZG SRS / PK / VK generation in `keygen` | done (artifact bundle + manifest; dev SRS behind explicit flag) |
 | Real `verify_decryption_proof_v1` / `prove_…_v1_from_witness_ptr` | done (native-tested; browser build requires wasm32 target) |
 | End-to-end TS test against the real artifact | done (keygen manifest + pk/vk/srs loader + dev-SRS gate) |

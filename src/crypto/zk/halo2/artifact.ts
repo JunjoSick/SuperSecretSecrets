@@ -7,6 +7,12 @@ export const HALO2_ARTIFACT_SCHEMA = 'sss-v3-halo2-artifact-v1';
 export const HALO2_ARTIFACT_SERDE_FORMAT_PROCESSED = 'processed';
 export const HALO2_ARTIFACT_SRS_SOURCE_DETERMINISTIC_DEV = 'deterministic-dev';
 export const HALO2_ARTIFACT_SRS_SOURCE_EXTERNAL = 'external';
+export const HALO2_VAULT_ROOT_PUBLIC_INSTANCES = [
+  'bundleId',
+  'plaintextCommitment',
+  'transcriptDigestHigh128',
+  'transcriptDigestLow128',
+] as const;
 
 export const PCS_KZG = 0x01;
 export const PCS_IPA = 0x02;
@@ -179,8 +185,8 @@ export function parseHalo2ArtifactManifest(input: unknown): Halo2ArtifactManifes
   if (manifest.metadata.relationDigest !== manifest.relationDigest) {
     throw new Error('Halo2 artifact manifest relation digest mismatch');
   }
-  if (manifest.circuit.publicInstances.length !== 2) {
-    throw new Error('Halo2 artifact manifest must declare two public instances');
+  if (!stringArraysEqual(manifest.circuit.publicInstances, HALO2_VAULT_ROOT_PUBLIC_INSTANCES)) {
+    throw new Error('Halo2 artifact manifest must declare the vault-root public instance layout');
   }
   return manifest;
 }
@@ -380,6 +386,10 @@ function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
   let diff = 0;
   for (let i = 0; i < a.length; i++) diff |= a[i]! ^ b[i]!;
   return diff === 0;
+}
+
+function stringArraysEqual(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((value, index) => value === b[index]);
 }
 
 function u16LengthPrefixed(bytes: Uint8Array): Uint8Array {

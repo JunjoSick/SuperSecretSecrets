@@ -1,11 +1,13 @@
 //! Halo2 circuit for the first honest proving milestone:
 //! `sss-v3-poseidon2bn254-vaultroot-only-v1`.
 //!
-//! The statement is deliberately narrow. The verifier supplies two public
+//! The statement is deliberately narrow. The verifier supplies four public
 //! instances:
 //!
 //! 1. the 8-byte `bundleId` interpreted as a BN254 scalar;
-//! 2. the Poseidon2-BN254 plaintext commitment field element.
+//! 2. the Poseidon2-BN254 plaintext commitment field element;
+//! 3. the high 128 bits of `SHA-256(encoded_public_inputs)`;
+//! 4. the low 128 bits of `SHA-256(encoded_public_inputs)`.
 //!
 //! The prover supplies the 32-byte `vaultRootKey` privately. The circuit
 //! constrains:
@@ -15,8 +17,10 @@
 //!   Poseidon2(domainTag, bundleId, vaultRootKey[0..16], vaultRootKey[16..32])
 //! ```
 //!
-//! Transcript parsing and envelope digest checks stay in the TypeScript/WASM
-//! wrapper; this circuit only captures the vault-root commitment relation.
+//! Transcript parsing stays in the TypeScript/WASM wrapper. The digest limbs
+//! are public instances so the Halo2 proof is bound to the exact canonical
+//! public-input transcript that contains the KEM ciphertext, nonce, algorithm
+//! tuple, and commitments.
 
 use halo2_axiom::halo2curves::{
     bn256::Fr,
@@ -27,6 +31,7 @@ use halo2_axiom::{
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Instance, Selector},
     poly::Rotation,
 };
+use zeroize::Zeroize;
 
 use crate::{
     commitment::{
@@ -42,28 +47,36 @@ const FULL_ROUNDS_END: usize = 4;
 const PARTIAL_ROUNDS: usize = 56;
 const TOTAL_ROUNDS: usize = FULL_ROUNDS_BEGIN + PARTIAL_ROUNDS + FULL_ROUNDS_END;
 
-pub const VAULT_ROOT_COMMITMENT_INSTANCE_COUNT: usize = 2;
+pub const VAULT_ROOT_COMMITMENT_INSTANCE_COUNT: usize = 4;
 pub const VAULT_ROOT_COMMITMENT_MIN_K: u32 = 11;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Zeroize)]
+#[zeroize(drop)]
 pub struct VaultRootCommitmentCircuit {
     pub bundle_id: [u8; BUNDLE_ID_BYTES],
     pub vault_root_key: [u8; crate::VAULT_ROOT_KEY_BYTES],
+    pub transcript_digest: [u8; COMMITMENT_BYTES],
 }
 
 impl VaultRootCommitmentCircuit {
     pub fn new(
         bundle_id: [u8; BUNDLE_ID_BYTES],
         vault_root_key: [u8; crate::VAULT_ROOT_KEY_BYTES],
+        transcript_digest: [u8; COMMITMENT_BYTES],
     ) -> Self {
         Self {
             bundle_id,
             vault_root_key,
+            transcript_digest,
         }
     }
 
     pub fn public_instances_for_witness(&self) -> [Fr; VAULT_ROOT_COMMITMENT_INSTANCE_COUNT] {
-        public_instances_for_vault_root_commitment(&self.bundle_id, &self.vault_root_key)
+        public_instances_for_vault_root_commitment(
+            &self.bundle_id,
+            &self.vault_root_key,
+            &self.transcript_digest,
+        )
     }
 }
 
@@ -72,6 +85,7 @@ impl Default for VaultRootCommitmentCircuit {
         Self {
             bundle_id: [0u8; BUNDLE_ID_BYTES],
             vault_root_key: [0u8; crate::VAULT_ROOT_KEY_BYTES],
+            transcript_digest: [0u8; COMMITMENT_BYTES],
         }
     }
 }
@@ -94,22 +108,37 @@ impl Circuit<Fr> for VaultRootCommitmentCircuit {
         config: Self::Config,
         mut layouter: impl Layouter<Fr>,
     ) -> Result<(), Error> {
-        let (bundle_cell, commitment_cell) = layouter.assign_region(
-            || "vault root Poseidon2 commitment",
-            |mut region| {
-                let mut offset = 0usize;
-                let chip = VaultRootCommitmentChip::new(config.clone());
-                chip.synthesize_commitment(
-                    &mut region,
-                    &mut offset,
-                    &self.bundle_id,
-                    &self.vault_root_key,
-                )
-            },
-        )?;
+        let (bundle_cell, commitment_cell, digest_high_cell, digest_low_cell) = layouter
+            .assign_region(
+                || "vault root Poseidon2 commitment",
+                |mut region| {
+                    let mut offset = 0usize;
+                    let chip = VaultRootCommitmentChip::new(config.clone());
+                    let (bundle_cell, commitment_cell) = chip.synthesize_commitment(
+                        &mut region,
+                        &mut offset,
+                        &self.bundle_id,
+                        &self.vault_root_key,
+                    )?;
+                    let (digest_high, digest_low) =
+                        split_transcript_digest_to_limbs(&self.transcript_digest);
+                    let digest_high_cell =
+                        chip.assign_private(&mut region, &mut offset, digest_high, "digest high")?;
+                    let digest_low_cell =
+                        chip.assign_private(&mut region, &mut offset, digest_low, "digest low")?;
+                    Ok((
+                        bundle_cell,
+                        commitment_cell,
+                        digest_high_cell,
+                        digest_low_cell,
+                    ))
+                },
+            )?;
 
         layouter.constrain_instance(bundle_cell.cell, config.instance, 0);
         layouter.constrain_instance(commitment_cell.cell, config.instance, 1);
+        layouter.constrain_instance(digest_high_cell.cell, config.instance, 2);
+        layouter.constrain_instance(digest_low_cell.cell, config.instance, 3);
         Ok(())
     }
 }
@@ -569,23 +598,31 @@ impl VaultRootCommitmentChip {
 pub fn public_instances_for_vault_root_commitment(
     bundle_id: &[u8; BUNDLE_ID_BYTES],
     vault_root_key: &[u8; crate::VAULT_ROOT_KEY_BYTES],
+    transcript_digest: &[u8; COMMITMENT_BYTES],
 ) -> [Fr; VAULT_ROOT_COMMITMENT_INSTANCE_COUNT] {
     let bundle_id_scalar = fixed_width_be_bytes_to_fr(bundle_id);
     let commitment = crate::bind_vault_root_plaintext_commitment(bundle_id, vault_root_key)
         .expect("typed bundle id and vault root key lengths are valid");
+    let (digest_high, digest_low) = split_transcript_digest_to_limbs(transcript_digest);
     [
         bundle_id_scalar,
         fr_from_be_bytes(&commitment).expect("Poseidon2 output is a BN254 scalar"),
+        digest_high,
+        digest_low,
     ]
 }
 
 pub fn public_instances_from_transcript(
     public_inputs: &DecryptionProofPublicInputsV1<'_>,
+    transcript_digest: &[u8; COMMITMENT_BYTES],
 ) -> Result<[Fr; VAULT_ROOT_COMMITMENT_INSTANCE_COUNT], VaultRootCircuitInputError> {
+    let (digest_high, digest_low) = split_transcript_digest_to_limbs(transcript_digest);
     Ok([
         fixed_width_be_bytes_to_fr(public_inputs.bundle_id),
         fr_from_be_bytes(public_inputs.plaintext_commitment)
             .ok_or(VaultRootCircuitInputError::PlaintextCommitmentNotField)?,
+        digest_high,
+        digest_low,
     ])
 }
 
@@ -642,6 +679,12 @@ fn u128_to_fr(value: u128) -> Fr {
     Option::<Fr>::from(Fr::from_repr(repr)).expect("u128 fits in BN254 scalar")
 }
 
+fn split_transcript_digest_to_limbs(digest: &[u8; COMMITMENT_BYTES]) -> (Fr, Fr) {
+    let high = u128::from_be_bytes(digest[..16].try_into().expect("slice is 16 bytes"));
+    let low = u128::from_be_bytes(digest[16..].try_into().expect("slice is 16 bytes"));
+    (u128_to_fr(high), u128_to_fr(low))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -650,11 +693,19 @@ mod tests {
     fn public_instance_commitment_matches_reference_helper() {
         let bundle_id = [7u8; BUNDLE_ID_BYTES];
         let vault_root_key = [42u8; crate::VAULT_ROOT_KEY_BYTES];
-        let instances = public_instances_for_vault_root_commitment(&bundle_id, &vault_root_key);
+        let transcript_digest = [99u8; COMMITMENT_BYTES];
+        let instances = public_instances_for_vault_root_commitment(
+            &bundle_id,
+            &vault_root_key,
+            &transcript_digest,
+        );
         let reference = crate::bind_vault_root_plaintext_commitment(&bundle_id, &vault_root_key)
             .expect("typed inputs are valid");
 
         assert_eq!(public_instances_to_commitment_bytes(&instances), reference);
+        let (digest_high, digest_low) = split_transcript_digest_to_limbs(&transcript_digest);
+        assert_eq!(instances[2], digest_high);
+        assert_eq!(instances[3], digest_low);
     }
 
     #[test]

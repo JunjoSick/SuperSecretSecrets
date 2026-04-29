@@ -260,7 +260,12 @@ fn generate_artifact(config: &Config) -> Result<GeneratedArtifact, Box<dyn Error
         circuit: JsonCircuit {
             name: "VaultRootCommitmentCircuit",
             k: config.k,
-            public_instances: vec!["bundleId".into(), "plaintextCommitment".into()],
+            public_instances: vec![
+                "bundleId".into(),
+                "plaintextCommitment".into(),
+                "transcriptDigestHigh128".into(),
+                "transcriptDigestLow128".into(),
+            ],
             version: format!(
                 "{CIRCUIT_VERSION_MAJOR}.{CIRCUIT_VERSION_MINOR}.{CIRCUIT_VERSION_PATCH}"
             ),

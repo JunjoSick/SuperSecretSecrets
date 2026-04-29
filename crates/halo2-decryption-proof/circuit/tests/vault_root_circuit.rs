@@ -13,7 +13,8 @@ use halo2_decryption_proof_circuit::{
 fn vault_root_commitment_circuit_accepts_matching_witness() {
     let bundle_id = bytes8(11);
     let vault_root_key = bytes32(29);
-    let circuit = VaultRootCommitmentCircuit::new(bundle_id, vault_root_key);
+    let transcript_digest = bytes32(67);
+    let circuit = VaultRootCommitmentCircuit::new(bundle_id, vault_root_key, transcript_digest);
     let public_instances = circuit.public_instances_for_witness();
 
     let prover = MockProver::run(
@@ -36,9 +37,10 @@ fn vault_root_commitment_circuit_accepts_matching_witness() {
 fn vault_root_commitment_circuit_rejects_wrong_public_commitment() {
     let bundle_id = bytes8(17);
     let vault_root_key = bytes32(41);
-    let circuit = VaultRootCommitmentCircuit::new(bundle_id, vault_root_key);
+    let transcript_digest = bytes32(71);
+    let circuit = VaultRootCommitmentCircuit::new(bundle_id, vault_root_key, transcript_digest);
     let mut public_instances =
-        public_instances_for_vault_root_commitment(&bundle_id, &vault_root_key);
+        public_instances_for_vault_root_commitment(&bundle_id, &vault_root_key, &transcript_digest);
     public_instances[1] += Fr::ONE;
 
     let prover = MockProver::run(
@@ -54,10 +56,30 @@ fn vault_root_commitment_circuit_rejects_wrong_public_commitment() {
 fn vault_root_commitment_circuit_rejects_wrong_public_bundle_id() {
     let bundle_id = bytes8(23);
     let vault_root_key = bytes32(53);
-    let circuit = VaultRootCommitmentCircuit::new(bundle_id, vault_root_key);
+    let transcript_digest = bytes32(73);
+    let circuit = VaultRootCommitmentCircuit::new(bundle_id, vault_root_key, transcript_digest);
     let mut public_instances =
-        public_instances_for_vault_root_commitment(&bundle_id, &vault_root_key);
+        public_instances_for_vault_root_commitment(&bundle_id, &vault_root_key, &transcript_digest);
     public_instances[0] += Fr::ONE;
+
+    let prover = MockProver::run(
+        VAULT_ROOT_COMMITMENT_MIN_K,
+        &circuit,
+        vec![public_instances.to_vec()],
+    )
+    .expect("mock prover runs");
+    assert!(prover.verify().is_err());
+}
+
+#[test]
+fn vault_root_commitment_circuit_rejects_wrong_public_transcript_digest() {
+    let bundle_id = bytes8(31);
+    let vault_root_key = bytes32(83);
+    let transcript_digest = bytes32(91);
+    let circuit = VaultRootCommitmentCircuit::new(bundle_id, vault_root_key, transcript_digest);
+    let mut public_instances =
+        public_instances_for_vault_root_commitment(&bundle_id, &vault_root_key, &transcript_digest);
+    public_instances[2] += Fr::ONE;
 
     let prover = MockProver::run(
         VAULT_ROOT_COMMITMENT_MIN_K,

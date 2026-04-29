@@ -7,6 +7,7 @@ import {
   HALO2_ARTIFACT_SERDE_FORMAT_PROCESSED,
   HALO2_ARTIFACT_SRS_SOURCE_DETERMINISTIC_DEV,
   HALO2_ARTIFACT_SRS_SOURCE_EXTERNAL,
+  HALO2_VAULT_ROOT_PUBLIC_INSTANCES,
   HALO2_VERIFIER_ARTIFACT_DIGEST_DOMAIN,
   PCS_IPA,
   PCS_KZG,
@@ -115,6 +116,13 @@ describe('Halo2 verifier artifact metadata', () => {
       }),
     ).toThrow(/verifying key hash/);
 
+    expect(() =>
+      parseHalo2ArtifactManifest({
+        ...bundle.manifest,
+        circuit: { ...bundle.manifest.circuit, publicInstances: ['bundleId', 'plaintextCommitment'] },
+      }),
+    ).toThrow(/public instance layout/);
+
     const external = sampleManifestBundle(HALO2_ARTIFACT_SRS_SOURCE_EXTERNAL);
     expect(() =>
       loadHalo2ProverArtifactBundle({
@@ -187,7 +195,7 @@ function sampleManifestBundle(srsSource: typeof HALO2_ARTIFACT_SRS_SOURCE_DETERM
     circuit: {
       name: 'VaultRootCommitmentCircuit',
       k: 11,
-      publicInstances: ['bundleId', 'plaintextCommitment'],
+      publicInstances: [...HALO2_VAULT_ROOT_PUBLIC_INSTANCES],
       version: '1.2.3',
     },
     files: {

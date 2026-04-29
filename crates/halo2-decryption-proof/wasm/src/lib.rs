@@ -26,14 +26,17 @@ use halo2_axiom::{
 };
 use halo2_decryption_proof_circuit::{
     circuit::{
-        public_instances_from_transcript, public_instances_for_vault_root_commitment,
+        public_instances_for_vault_root_commitment, public_instances_from_transcript,
         VaultRootCircuitInputError, VaultRootCommitmentCircuit,
     },
-    transcript::{decode_public_inputs, DecryptionProofPublicInputsV1, TranscriptError},
-    witness::{OwnedWitness, WitnessError},
+    transcript::{
+        decode_public_inputs, transcript_digest, DecryptionProofPublicInputsV1, TranscriptError,
+    },
+    witness::{OwnedWitness, WitnessError, VAULT_ROOT_KEY_BYTES},
     Bn254Scalar,
 };
 use rand_core::OsRng;
+use zeroize::Zeroizing;
 
 const SERDE_FORMAT: SerdeFormat = SerdeFormat::Processed;
 
@@ -76,15 +79,46 @@ pub fn prove_decryption_proof_v1(
     proving_key_bytes: &[u8],
     srs_bytes: &[u8],
 ) -> Result<Vec<u8>, BackendError> {
-    let public_inputs = decode_public_inputs(encoded_public_inputs)?;
     let witness = OwnedWitness::from_buffer(witness_bytes)?;
+    prove_decryption_proof_v1_with_owned_witness(
+        encoded_public_inputs,
+        witness,
+        proving_key_bytes,
+        srs_bytes,
+    )
+}
+
+fn prove_decryption_proof_v1_with_owned_witness(
+    encoded_public_inputs: &[u8],
+    witness: OwnedWitness,
+    proving_key_bytes: &[u8],
+    srs_bytes: &[u8],
+) -> Result<Vec<u8>, BackendError> {
+    let vault_root_key = Zeroizing::new(witness.vault_root_key);
+    prove_decryption_proof_v1_with_vault_root_key(
+        encoded_public_inputs,
+        &vault_root_key,
+        proving_key_bytes,
+        srs_bytes,
+    )
+}
+
+fn prove_decryption_proof_v1_with_vault_root_key(
+    encoded_public_inputs: &[u8],
+    vault_root_key: &[u8; VAULT_ROOT_KEY_BYTES],
+    proving_key_bytes: &[u8],
+    srs_bytes: &[u8],
+) -> Result<Vec<u8>, BackendError> {
+    let public_inputs = decode_public_inputs(encoded_public_inputs)?;
+    let digest = transcript_digest(encoded_public_inputs);
     let params = read_srs(srs_bytes)?;
     let pk = read_proving_key(proving_key_bytes)?;
-    let instances = public_instances_from_transcript(&public_inputs)?;
+    let instances = public_instances_from_transcript(&public_inputs, &digest)?;
 
-    assert_witness_matches_public_commitment(&public_inputs, &witness)?;
+    assert_witness_matches_public_commitment(&public_inputs, &digest, vault_root_key)?;
 
-    let circuit = VaultRootCommitmentCircuit::new(*public_inputs.bundle_id, witness.vault_root_key);
+    let circuit =
+        VaultRootCommitmentCircuit::new(*public_inputs.bundle_id, *vault_root_key, digest);
     let instance_columns: [&[Bn254Scalar]; 1] = [&instances[..]];
     let all_instances: [&[&[Bn254Scalar]]; 1] = [&instance_columns[..]];
 
@@ -109,9 +143,10 @@ pub fn verify_decryption_proof_v1(
     srs_bytes: &[u8],
 ) -> Result<bool, BackendError> {
     let public_inputs = decode_public_inputs(encoded_public_inputs)?;
+    let digest = transcript_digest(encoded_public_inputs);
     let params = read_srs(srs_bytes)?;
     let vk = read_verifying_key(verifying_key_bytes)?;
-    let instances = public_instances_from_transcript(&public_inputs)?;
+    let instances = public_instances_from_transcript(&public_inputs, &digest)?;
     let instance_columns: [&[Bn254Scalar]; 1] = [&instances[..]];
     let all_instances: [&[&[Bn254Scalar]]; 1] = [&instance_columns[..]];
 
@@ -137,11 +172,15 @@ pub fn verify_decryption_proof_v1(
 
 fn assert_witness_matches_public_commitment(
     public_inputs: &DecryptionProofPublicInputsV1<'_>,
-    witness: &OwnedWitness,
+    transcript_digest: &[u8; 32],
+    vault_root_key: &[u8; VAULT_ROOT_KEY_BYTES],
 ) -> Result<(), BackendError> {
-    let expected = public_instances_from_transcript(public_inputs)?;
-    let computed =
-        public_instances_for_vault_root_commitment(public_inputs.bundle_id, &witness.vault_root_key);
+    let expected = public_instances_from_transcript(public_inputs, transcript_digest)?;
+    let computed = public_instances_for_vault_root_commitment(
+        public_inputs.bundle_id,
+        vault_root_key,
+        transcript_digest,
+    );
     if computed == expected {
         Ok(())
     } else {
@@ -184,7 +223,11 @@ fn read_verifying_key(bytes: &[u8]) -> Result<VerifyingKey<G1Affine>, BackendErr
     Ok(vk)
 }
 
-fn reject_trailing_bytes(cursor: &Cursor<&[u8]>, len: usize, label: &'static str) -> io::Result<()> {
+fn reject_trailing_bytes(
+    cursor: &Cursor<&[u8]>,
+    len: usize,
+    label: &'static str,
+) -> io::Result<()> {
     if cursor.position() == len as u64 {
         Ok(())
     } else {
@@ -216,12 +259,15 @@ impl From<VaultRootCircuitInputError> for BackendError {
 #[cfg(target_arch = "wasm32")]
 mod ffi {
     use super::{
-        prove_decryption_proof_v1 as prove_decryption_proof_v1_core,
+        prove_decryption_proof_v1_with_vault_root_key,
         verify_decryption_proof_v1 as verify_decryption_proof_v1_core,
     };
-    use halo2_decryption_proof_circuit::witness::HALO2_WITNESS_V1_BYTES;
+    use halo2_decryption_proof_circuit::witness::{
+        view_witness_buffer, HALO2_WITNESS_V1_BYTES, VAULT_ROOT_KEY_BYTES,
+    };
+    use std::panic::{catch_unwind, AssertUnwindSafe};
     use wasm_bindgen::prelude::*;
-    use zeroize::Zeroize;
+    use zeroize::{Zeroize, Zeroizing};
 
     #[wasm_bindgen]
     pub fn allocate_buffer(len: usize) -> *mut u8 {
@@ -264,12 +310,15 @@ mod ffi {
         verifying_key_bytes: &[u8],
         srs_bytes: &[u8],
     ) -> Result<bool, JsError> {
-        verify_decryption_proof_v1_core(
-            proof_bytes,
-            encoded_public_inputs,
-            verifying_key_bytes,
-            srs_bytes,
-        )
+        catch_unwind(AssertUnwindSafe(|| {
+            verify_decryption_proof_v1_core(
+                proof_bytes,
+                encoded_public_inputs,
+                verifying_key_bytes,
+                srs_bytes,
+            )
+        }))
+        .map_err(|_| JsError::new("Halo2 verifier backend panicked"))?
         .map_err(|e| JsError::new(&e.to_string()))
     }
 
@@ -289,13 +338,36 @@ mod ffi {
         let encoded_public_inputs = unsafe {
             core::slice::from_raw_parts(encoded_public_inputs_ptr, encoded_public_inputs_len)
         };
-        let witness = unsafe { core::slice::from_raw_parts(witness_ptr, witness_len) };
+        let witness =
+            unsafe { core::slice::from_raw_parts_mut(witness_ptr.cast_mut(), witness_len) };
         let proving_key = unsafe { core::slice::from_raw_parts(proving_key_ptr, proving_key_len) };
         let srs = unsafe { core::slice::from_raw_parts(srs_ptr, srs_len) };
 
-        prove_decryption_proof_v1_core(encoded_public_inputs, witness, proving_key, srs)
-            .map(Vec::into_boxed_slice)
-            .map_err(|e| JsError::new(&e.to_string()))
+        let mut vault_root_key = Zeroizing::new([0u8; VAULT_ROOT_KEY_BYTES]);
+        match view_witness_buffer(witness) {
+            Ok(view) => vault_root_key.copy_from_slice(view.vault_root_key),
+            Err(e) => {
+                witness.zeroize();
+                return Err(JsError::new(&e.to_string()));
+            }
+        }
+        witness.zeroize();
+
+        catch_unwind(AssertUnwindSafe(|| {
+            prove_decryption_proof_v1_with_vault_root_key(
+                encoded_public_inputs,
+                &vault_root_key,
+                proving_key,
+                srs,
+            )
+        }))
+        .map_err(|_| {
+            JsError::new(
+                "Halo2 prover backend panicked after the JS-visible witness buffer was zeroized",
+            )
+        })?
+        .map(Vec::into_boxed_slice)
+        .map_err(|e| JsError::new(&e.to_string()))
     }
 
     #[cfg(feature = "panic-hook")]
@@ -308,9 +380,7 @@ mod ffi {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use halo2_axiom::{
-        plonk::{keygen_pk, keygen_vk},
-    };
+    use halo2_axiom::plonk::{keygen_pk, keygen_vk};
     use halo2_decryption_proof_circuit::{
         circuit::VAULT_ROOT_COMMITMENT_MIN_K,
         commitment::bind_vault_root_plaintext_commitment_typed,
@@ -335,13 +405,9 @@ mod tests {
         let public_inputs = encode_public_inputs(bundle_id, plaintext_commitment);
         let witness = encode_witness([7u8; ML_KEM_SEED_BYTES], vault_root_key);
 
-        let proof = prove_decryption_proof_v1(
-            &public_inputs,
-            &witness,
-            &proving_key_bytes,
-            &srs_bytes,
-        )
-        .expect("proof generation succeeds");
+        let proof =
+            prove_decryption_proof_v1(&public_inputs, &witness, &proving_key_bytes, &srs_bytes)
+                .expect("proof generation succeeds");
         assert!(!proof.is_empty());
 
         assert!(verify_decryption_proof_v1(
@@ -362,6 +428,17 @@ mod tests {
             &srs_bytes,
         )
         .expect("verification call succeeds"));
+
+        let mut tampered_public_inputs = public_inputs.clone();
+        let last = tampered_public_inputs.len() - 1;
+        tampered_public_inputs[last] ^= 1;
+        assert!(!verify_decryption_proof_v1(
+            &proof,
+            &tampered_public_inputs,
+            &verifying_key_bytes,
+            &srs_bytes,
+        )
+        .expect("verification call succeeds"));
     }
 
     #[test]
@@ -375,13 +452,9 @@ mod tests {
         let public_inputs = encode_public_inputs(bundle_id, plaintext_commitment);
         let witness = encode_witness([9u8; ML_KEM_SEED_BYTES], different_key);
 
-        let err = prove_decryption_proof_v1(
-            &public_inputs,
-            &witness,
-            &proving_key_bytes,
-            &srs_bytes,
-        )
-        .expect_err("mismatched commitment is rejected before proving");
+        let err =
+            prove_decryption_proof_v1(&public_inputs, &witness, &proving_key_bytes, &srs_bytes)
+                .expect_err("mismatched commitment is rejected before proving");
         assert!(matches!(err, BackendError::CommitmentMismatch));
     }
 
@@ -411,10 +484,7 @@ mod tests {
         out
     }
 
-    fn encode_public_inputs(
-        bundle_id: [u8; 8],
-        plaintext_commitment: [u8; 32],
-    ) -> Vec<u8> {
+    fn encode_public_inputs(bundle_id: [u8; 8], plaintext_commitment: [u8; 32]) -> Vec<u8> {
         let mut out = Vec::new();
         out.extend_from_slice(&(TRANSCRIPT_DOMAIN.len() as u16).to_be_bytes());
         out.extend_from_slice(TRANSCRIPT_DOMAIN.as_bytes());
