@@ -39,6 +39,7 @@ use rand_core::OsRng;
 use zeroize::Zeroizing;
 
 const SERDE_FORMAT: SerdeFormat = SerdeFormat::Processed;
+const SRS_SERDE_FORMAT: SerdeFormat = SerdeFormat::RawBytes;
 
 #[derive(Debug)]
 pub enum BackendError {
@@ -190,7 +191,7 @@ fn assert_witness_matches_public_commitment(
 
 fn read_srs(bytes: &[u8]) -> Result<ParamsKZG<Bn256>, BackendError> {
     let mut cursor = Cursor::new(bytes);
-    let params = ParamsKZG::<Bn256>::read_custom(&mut cursor, SERDE_FORMAT)
+    let params = ParamsKZG::<Bn256>::read_custom(&mut cursor, SRS_SERDE_FORMAT)
         .map_err(|e| BackendError::InvalidSrs(e.to_string()))?;
     reject_trailing_bytes(&cursor, bytes.len(), "KZG SRS")
         .map_err(|e| BackendError::InvalidSrs(e.to_string()))?;
@@ -487,7 +488,7 @@ mod tests {
 
         let mut srs_bytes = Vec::new();
         params
-            .write_custom(&mut srs_bytes, SERDE_FORMAT)
+            .write_custom(&mut srs_bytes, SRS_SERDE_FORMAT)
             .expect("SRS serializes");
         let proving_key_bytes = pk.to_bytes(SERDE_FORMAT);
         let verifying_key_bytes = pk.get_vk().to_bytes(SERDE_FORMAT);

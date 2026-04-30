@@ -1,0 +1,30 @@
+{
+  "manifestKind": "proof-artifact",
+  "manifestVersion": 1,
+  "relationId": "sss-v3-mlkem768-hkdfsha256-aes256gcm-poseidon2bn254-vaultroot-nopass-v1",
+  "circuitVersion": "v1",
+  "publicInputSchemaVersion": "v1",
+  "scheme": "halo2-kzg",
+  "curve": "bn254",
+  "pcs": "kzg",
+  "expectedK": 14,
+  "srs": {
+    "sourceCeremony": "Axiom challenge 0085 BN254 KZG SRS",
+    "sourceUrl": "https://axiom-crypto.s3.amazonaws.com/challenge_0085/kzg_bn254_15.srs",
+    "sourceSha256": "sha256:4cdb1688ec4457351582cc99a31e073279bb3abe1ee6fe04c401cc9e390ab67b",
+    "format": "halo2 ParamsKZG raw-bytes format",
+    "conversionTool": "cargo run -p halo2-decryption-proof-keygen --bin downsample_srs",
+    "convertedSha256": "sha256:4cdb1688ec4457351582cc99a31e073279bb3abe1ee6fe04c401cc9e390ab67b",
+    "downsampledSha256": "sha256:ea7257f0ea1f784d6291ef5a5585c759c8dd1785929ad9e7e9da51aed2226a64"
+  },
+  "artifacts": {
+    "provingKeySha256": "sha256:TODO",
+    "verifyingKeySha256": "sha256:TODO",
+    "publicInputSchemaSha256": "sha256:TODO"
+  },
+  "implementation": {
+    "halo2VersionOrCommit": "halo2-axiom 0.5.1",
+    "halo2CurvesVersionOrCommit": "via halo2-axiom 0.5.1",
+    "rustcVersion": "TODO"
+  }
+}

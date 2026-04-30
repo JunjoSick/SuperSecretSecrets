@@ -51,7 +51,9 @@ import {
   VERSION,
   VERSION_V2,
   VERSION_V3,
+  type Argon2Header,
   type HeaderChunkQr,
+  type HeaderFlags,
   type ParsedQr,
   type ShareQr,
   type Tlv,
@@ -236,6 +238,10 @@ export type EncodedBundle = {
 const INFO_AEAD = 'SSS/AEAD/v1';
 const INFO_PASSPHRASE = 'SSS/passphrase/v1';
 const BUNDLE_ID_LEN = 8;
+// QR version 40 at error-correction M carries 3391 alphanumeric characters.
+// Base45 payloads use QR alphanumeric mode, so this caps emitted header QRs
+// to what the default renderer can actually encode.
+const MAX_HEADER_QR_BASE45_CHARS_ECC_M = 3391;
 const vdfDiscriminantCache = new Map<number, bigint>();
 
 function randBytes(n: number): Uint8Array {
@@ -333,7 +339,8 @@ function encodeSecretV1(plaintext: string, opts: EncodeOptions): EncodedBundle {
   const headerArgon2 = { tCost: argon2.t, memLog2KiB, parallelism: argon2.p };
   const flags = { passphrase: !!(opts.passphrase && opts.passphrase.length > 0) };
 
-  const headerChunks = chunkBytes(headerPayload, opts.maxHeaderBytes ?? 800);
+  const maxHeaderPayloadBytes = opts.maxHeaderBytes ?? 800;
+  const headerChunks = chunkBytes(headerPayload, maxHeaderPayloadBytes);
   const headerQrs = headerChunks.map((chunk, idx) => {
     const framed = encodeHeaderChunk({
       bundleId,
@@ -426,7 +433,7 @@ function encodeSecretV2(plaintext: string, opts: EncodeOptions, runtime: EncodeR
         )
       : null;
   const metadataKey = deriveMetadataKey(kemSeed, bundleId);
-  const headerChunks = chunkBytes(headerPayload, opts.maxHeaderBytes ?? 800);
+  const maxHeaderPayloadBytes = opts.maxHeaderBytes ?? 800;
   const payloadKind = opts.vaultMode ? 'vault-root' : 'secret';
   let vdfParams: VdfParams | null = null;
   if (opts.vdf) {
@@ -438,35 +445,28 @@ function encodeSecretV2(plaintext: string, opts: EncodeOptions, runtime: EncodeR
   const encodeHeader = useV3 ? encodeHeaderChunkV3 : encodeHeaderChunkV2;
   const encodeShareFn = useV3 ? encodeShareV3 : encodeShareV2;
 
-  const headerQrs = headerChunks.map((chunk, idx) => {
-    const extensions =
-      idx === 0
-        ? [
-            makeTlv(TLV_POLICY_MANIFEST, encodePolicyManifest(policyManifest), true),
-            makeTlv(TLV_PAYLOAD_FORMAT, textBytes(payloadKind), true),
-            ...(opts.metadata ? [makeTlv(TLV_BUNDLE_METADATA, encodeShareMetadata(opts.metadata), false)] : []),
-            ...(vaultId ? [makeTlv(TLV_VAULT_INFO, encodeVaultInfo({ vaultId, formatVersion: VAULT_FORMAT_VERSION }), true)] : []),
-            ...(policyCommitRoot ? [makeTlv(TLV_POLICY_COMMITMENT, policyCommitRoot, true)] : []),
-            ...(ptCommit ? [makeTlv(TLV_PLAINTEXT_COMMITMENT, ptCommit, true)] : []),
-            ...(vaultTreeRootBytes ? [makeTlv(TLV_VAULT_TREE_ROOT, vaultTreeRootBytes, true)] : []),
-            ...(vdfParams ? [makeTlv(TLV_VDF_PARAMS, encodeVdfParams(vdfParams), true)] : []),
-          ]
-        : [];
-    const framed = encodeHeader({
-      bundleId,
-      kemAlg: opts.kemAlg,
-      aeadAlg: opts.aeadAlg,
-      kdfAlg: opts.kdfAlg,
-      flags,
-      argon2: headerArgon2,
-      t: policyManifest.threshold,
-      n: policyManifest.totalPoints,
-      chunkIdx: idx,
-      chunkTotal: headerChunks.length,
-      extensions,
-      payload: chunk,
-    });
-    return toBase45(framed);
+  const headerQrs = buildHeaderQrs({
+    headerPayload,
+    maxPayloadBytes: maxHeaderPayloadBytes,
+    encodeHeader,
+    bundleId,
+    kemAlg: opts.kemAlg,
+    aeadAlg: opts.aeadAlg,
+    kdfAlg: opts.kdfAlg,
+    flags,
+    argon2: headerArgon2,
+    t: policyManifest.threshold,
+    n: policyManifest.totalPoints,
+    firstExtensions: [
+      makeTlv(TLV_POLICY_MANIFEST, encodePolicyManifest(policyManifest), true),
+      makeTlv(TLV_PAYLOAD_FORMAT, textBytes(payloadKind), true),
+      ...(opts.metadata ? [makeTlv(TLV_BUNDLE_METADATA, encodeShareMetadata(opts.metadata), false)] : []),
+      ...(vaultId ? [makeTlv(TLV_VAULT_INFO, encodeVaultInfo({ vaultId, formatVersion: VAULT_FORMAT_VERSION }), true)] : []),
+      ...(policyCommitRoot ? [makeTlv(TLV_POLICY_COMMITMENT, policyCommitRoot, true)] : []),
+      ...(ptCommit ? [makeTlv(TLV_PLAINTEXT_COMMITMENT, ptCommit, true)] : []),
+      ...(vaultTreeRootBytes ? [makeTlv(TLV_VAULT_TREE_ROOT, vaultTreeRootBytes, true)] : []),
+      ...(vdfParams ? [makeTlv(TLV_VDF_PARAMS, encodeVdfParams(vdfParams), true)] : []),
+    ],
   });
 
   const shareQrs = compiled.shares.map((share, shareOffset) => {
@@ -635,7 +635,8 @@ async function encodeSecretV2Async(
       : vaultTreeRoot(entries)
     : null;
   const metadataKey = deriveMetadataKey(kemSeed, bundleId);
-  const headerChunks = chunkBytes(headerPayload, opts.maxHeaderBytes ?? 800);
+  const maxHeaderPayloadBytes = opts.maxHeaderBytes ?? 800;
+  const headerChunks = chunkBytes(headerPayload, maxHeaderPayloadBytes);
 
   let vdfParams: VdfParams | null = null;
   if (opts.vdf) {
@@ -726,36 +727,29 @@ async function encodeSecretV2Async(
   if (opts.vaultMode) protectedPayload.fill(0);
   vaultRootKeyForProof?.fill(0);
 
-  const headerQrs = headerChunks.map((chunk, idx) => {
-    const extensions =
-      idx === 0
-        ? [
-            makeTlv(TLV_POLICY_MANIFEST, encodePolicyManifest(policyManifest), true),
-            makeTlv(TLV_PAYLOAD_FORMAT, textBytes(payloadKind), true),
-            ...(opts.metadata ? [makeTlv(TLV_BUNDLE_METADATA, encodeShareMetadata(opts.metadata), false)] : []),
-            ...(vaultId ? [makeTlv(TLV_VAULT_INFO, encodeVaultInfo({ vaultId, formatVersion: VAULT_FORMAT_VERSION }), true)] : []),
-            ...(policyCommitRoot ? [makeTlv(TLV_POLICY_COMMITMENT, policyCommitRoot, true)] : []),
-            ...(ptCommit ? [makeTlv(TLV_PLAINTEXT_COMMITMENT, ptCommit, true)] : []),
-            ...(vaultTreeRootBytes ? [makeTlv(TLV_VAULT_TREE_ROOT, vaultTreeRootBytes, true)] : []),
-            ...(vdfParams ? [makeTlv(TLV_VDF_PARAMS, encodeVdfParams(vdfParams), true)] : []),
-            ...(decryptionProofTlv ? [decryptionProofTlv] : []),
-          ]
-        : [];
-    const framed = encodeHeader({
-      bundleId,
-      kemAlg: opts.kemAlg,
-      aeadAlg: opts.aeadAlg,
-      kdfAlg: opts.kdfAlg,
-      flags,
-      argon2: headerArgon2,
-      t: policyManifest.threshold,
-      n: policyManifest.totalPoints,
-      chunkIdx: idx,
-      chunkTotal: headerChunks.length,
-      extensions,
-      payload: chunk,
-    });
-    return toBase45(framed);
+  const headerQrs = buildHeaderQrs({
+    headerPayload,
+    maxPayloadBytes: maxHeaderPayloadBytes,
+    encodeHeader,
+    bundleId,
+    kemAlg: opts.kemAlg,
+    aeadAlg: opts.aeadAlg,
+    kdfAlg: opts.kdfAlg,
+    flags,
+    argon2: headerArgon2,
+    t: policyManifest.threshold,
+    n: policyManifest.totalPoints,
+    firstExtensions: [
+      makeTlv(TLV_POLICY_MANIFEST, encodePolicyManifest(policyManifest), true),
+      makeTlv(TLV_PAYLOAD_FORMAT, textBytes(payloadKind), true),
+      ...(opts.metadata ? [makeTlv(TLV_BUNDLE_METADATA, encodeShareMetadata(opts.metadata), false)] : []),
+      ...(vaultId ? [makeTlv(TLV_VAULT_INFO, encodeVaultInfo({ vaultId, formatVersion: VAULT_FORMAT_VERSION }), true)] : []),
+      ...(policyCommitRoot ? [makeTlv(TLV_POLICY_COMMITMENT, policyCommitRoot, true)] : []),
+      ...(ptCommit ? [makeTlv(TLV_PLAINTEXT_COMMITMENT, ptCommit, true)] : []),
+      ...(vaultTreeRootBytes ? [makeTlv(TLV_VAULT_TREE_ROOT, vaultTreeRootBytes, true)] : []),
+      ...(vdfParams ? [makeTlv(TLV_VDF_PARAMS, encodeVdfParams(vdfParams), true)] : []),
+      ...(decryptionProofTlv ? [decryptionProofTlv] : []),
+    ],
   });
 
   const shareQrs = compiled.shares.map((share, shareOffset) => {
@@ -879,6 +873,129 @@ function chunkBytes(data: Uint8Array, maxSize: number): Uint8Array[] {
     out.push(data.slice(o, Math.min(o + maxSize, data.length)));
   }
   return out;
+}
+
+type HeaderEncoder = typeof encodeHeaderChunkV2;
+
+type BuildHeaderQrsArgs = {
+  headerPayload: Uint8Array;
+  maxPayloadBytes: number;
+  encodeHeader: HeaderEncoder;
+  bundleId: Uint8Array;
+  kemAlg: KemAlg;
+  aeadAlg: AeadAlg;
+  kdfAlg: KdfAlg;
+  flags: HeaderFlags;
+  argon2: Argon2Header;
+  t: number;
+  n: number;
+  firstExtensions: Tlv[];
+};
+
+function buildHeaderQrs(args: BuildHeaderQrsArgs): string[] {
+  const maxPayloadBytes = args.maxPayloadBytes;
+  if (maxPayloadBytes < 1) throw new Error('maxHeaderBytes must be >= 1');
+
+  let chunkTotal = chunkBytes(args.headerPayload, maxPayloadBytes).length;
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const firstPayloadLimit = maxHeaderPayloadBytesForQr(args, args.firstExtensions, 0, chunkTotal);
+    const restPayloadLimit = maxHeaderPayloadBytesForQr(args, [], Math.min(1, chunkTotal - 1), chunkTotal);
+    if (firstPayloadLimit < 0) {
+      throw new Error('bundle header extensions are too large for a single QR header');
+    }
+    if (restPayloadLimit < 1) {
+      throw new Error('bundle header frame overhead is too large for a single QR header');
+    }
+
+    const chunks = chunkHeaderPayload(args.headerPayload, firstPayloadLimit, restPayloadLimit);
+    if (chunks.length > 0xff) throw new Error('header payload requires more than 255 QR chunks');
+    if (chunks.length !== chunkTotal) {
+      chunkTotal = chunks.length;
+      continue;
+    }
+
+    return chunks.map((payload, chunkIdx) => {
+      const qr = encodeHeaderQr(args, payload, chunkIdx, chunkTotal, chunkIdx === 0 ? args.firstExtensions : []);
+      if (qr.length > MAX_HEADER_QR_BASE45_CHARS_ECC_M) {
+        throw new Error('header QR exceeds renderable size at ECC M');
+      }
+      return qr;
+    });
+  }
+
+  throw new Error('unable to pack header payload into renderable QR chunks');
+}
+
+function maxHeaderPayloadBytesForQr(
+  args: BuildHeaderQrsArgs,
+  extensions: Tlv[],
+  chunkIdx: number,
+  chunkTotal: number,
+): number {
+  if (encodeHeaderQr(args, new Uint8Array(0), chunkIdx, chunkTotal, extensions).length > MAX_HEADER_QR_BASE45_CHARS_ECC_M) {
+    return -1;
+  }
+
+  let lo = 0;
+  let hi = args.maxPayloadBytes;
+  while (lo < hi) {
+    const mid = lo + Math.ceil((hi - lo) / 2);
+    const qr = encodeHeaderQr(args, new Uint8Array(mid), chunkIdx, chunkTotal, extensions);
+    if (qr.length <= MAX_HEADER_QR_BASE45_CHARS_ECC_M) {
+      lo = mid;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return lo;
+}
+
+function chunkHeaderPayload(
+  payload: Uint8Array,
+  firstPayloadLimit: number,
+  restPayloadLimit: number,
+): Uint8Array[] {
+  if (payload.length === 0) return [new Uint8Array(0)];
+  const chunks: Uint8Array[] = [];
+  let offset = 0;
+  if (firstPayloadLimit > 0) {
+    const firstEnd = Math.min(firstPayloadLimit, payload.length);
+    chunks.push(payload.slice(0, firstEnd));
+    offset = firstEnd;
+  } else {
+    chunks.push(new Uint8Array(0));
+  }
+  while (offset < payload.length) {
+    const end = Math.min(offset + restPayloadLimit, payload.length);
+    chunks.push(payload.slice(offset, end));
+    offset = end;
+  }
+  return chunks;
+}
+
+function encodeHeaderQr(
+  args: BuildHeaderQrsArgs,
+  payload: Uint8Array,
+  chunkIdx: number,
+  chunkTotal: number,
+  extensions: Tlv[],
+): string {
+  return toBase45(
+    args.encodeHeader({
+      bundleId: args.bundleId,
+      kemAlg: args.kemAlg,
+      aeadAlg: args.aeadAlg,
+      kdfAlg: args.kdfAlg,
+      flags: args.flags,
+      argon2: args.argon2,
+      t: args.t,
+      n: args.n,
+      chunkIdx,
+      chunkTotal,
+      extensions,
+      payload,
+    }),
+  );
 }
 
 export type DecodeNeedMore = {

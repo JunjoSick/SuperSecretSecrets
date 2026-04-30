@@ -11,6 +11,15 @@ description = "Generates the SSS v3 vaultroot-only Halo2 KZG SRS, proving key, v
 name = "halo2-decryption-proof-keygen"
 path = "src/main.rs"
 
+[[bin]]
+name = "downsample_srs"
+path = "src/bin/downsample_srs.rs"
+
+[features]
+default = ["production-artifacts"]
+production-artifacts = []
+dev-unsafe-srs = []
+
 [dependencies]
 halo2-decryption-proof-circuit = { path = "../circuit" }
 halo2_axiom = { workspace = true }

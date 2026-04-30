@@ -151,6 +151,42 @@ describe('v3 decryption proof integration', () => {
     ).rejects.toThrow(/prover/);
   });
 
+  it('rejects proof envelopes that cannot fit in one renderable header QR', async () => {
+    const verifier: DecryptionProofVerifier = {
+      ...mockDecryptionProofVerifier,
+      async verifyEnvelopeV1() {
+        return { status: 'verified' };
+      },
+    };
+
+    await expect(
+      encodeSecretAsync('oversized proof qr', {
+        ...PROOF_FAST,
+        decryptionProof: {
+          enabled: true,
+          prover: {
+            ...mockDecryptionProofProver,
+            async proveV1(input) {
+              const transcriptDigest = digestDecryptionProofPublicInputsV1(input.publicInputs);
+              return {
+                envelopeVersion: 1,
+                schemeId: mockDecryptionProofProver.schemeId,
+                flags: 0x01,
+                relationId: mockDecryptionProofProver.relationId,
+                relationDigest: mockDecryptionProofProver.relationDigest,
+                verifierArtifactDigest: mockDecryptionProofProver.verifierArtifactDigest,
+                transcriptDigest,
+                proofBytes: bytes(2500, 37),
+              };
+            },
+          },
+          verifiers: [verifier],
+          allowLargeProof: true,
+        },
+      }),
+    ).rejects.toThrow(/too large for a single QR header|exceeds renderable size/);
+  });
+
   it('rejects provers that still claim the future full relation', async () => {
     await expect(
       encodeSecretAsync('wrong relation prover', {
@@ -275,4 +311,8 @@ function firstHeaderFromBundle(headerQrs: string[]) {
 
 function hex(bytes: Uint8Array): string {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function bytes(length: number, seed: number): Uint8Array {
+  return Uint8Array.from({ length }, (_, index) => (seed + index) & 0xff);
 }

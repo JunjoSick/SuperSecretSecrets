@@ -11,6 +11,7 @@ import {
   HALO2_VERIFIER_ARTIFACT_DIGEST_DOMAIN,
   PCS_IPA,
   PCS_KZG,
+  PROOF_ARTIFACT_DIGEST,
   digestHalo2ArtifactMetadata,
   encodeHalo2ArtifactMetadata,
   loadHalo2ProverArtifactBundle,
@@ -18,6 +19,10 @@ import {
   type Halo2ArtifactMetadata,
   type Halo2ArtifactManifest,
 } from '../src/crypto/zk/halo2/artifact';
+import {
+  assertTrustedProofArtifactDigest,
+  isTrustedProofArtifactDigest,
+} from '../src/crypto/zk/halo2/verifierRegistry';
 import {
   DECRYPTION_PROOF_SCHEME_HALO2_KZG,
   RELATION_V1_VAULTROOT_ONLY_DIGEST,
@@ -130,6 +135,13 @@ describe('Halo2 verifier artifact metadata', () => {
         files: external.files,
       }),
     ).not.toThrow();
+  });
+
+  it('does not trust placeholder or unknown production proof artifact digests', () => {
+    expect(PROOF_ARTIFACT_DIGEST).toEqual(new Uint8Array(32));
+    expect(isTrustedProofArtifactDigest(PROOF_ARTIFACT_DIGEST)).toBe(false);
+    expect(() => assertTrustedProofArtifactDigest(PROOF_ARTIFACT_DIGEST)).toThrow(/Untrusted/);
+    expect(() => assertTrustedProofArtifactDigest(bytes(32, 121))).toThrow(/Untrusted/);
   });
 });
 

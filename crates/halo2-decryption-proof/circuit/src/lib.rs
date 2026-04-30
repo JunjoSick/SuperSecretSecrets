@@ -22,6 +22,7 @@
 #![deny(rust_2018_idioms)]
 #![forbid(unsafe_code)]
 
+pub mod artifacts;
 pub mod circuit;
 pub mod commitment;
 pub mod poseidon2;
