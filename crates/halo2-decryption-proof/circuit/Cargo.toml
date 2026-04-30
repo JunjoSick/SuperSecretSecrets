@@ -1,0 +1,23 @@
+[package]
+name = "halo2-decryption-proof-circuit"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+rust-version.workspace = true
+description = "Halo2 circuit + reference Poseidon2-BN254 commitment for the SSS v3 decryption proof"
+
+[lib]
+name = "halo2_decryption_proof_circuit"
+path = "src/lib.rs"
+
+[dependencies]
+halo2_axiom = { workspace = true }
+sha2 = { workspace = true, features = ["std"] }
+subtle = { workspace = true, features = ["std"] }
+zeroize = { workspace = true, features = ["std", "alloc"] }
+hex = { workspace = true, features = ["std"] }
+
+[dev-dependencies]
+serde = { workspace = true, features = ["derive", "std"] }
+serde_json = { workspace = true }

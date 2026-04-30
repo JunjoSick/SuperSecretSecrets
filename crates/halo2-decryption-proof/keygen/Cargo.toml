@@ -1,0 +1,22 @@
+[package]
+name = "halo2-decryption-proof-keygen"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+rust-version.workspace = true
+description = "Generates the SSS v3 vaultroot-only Halo2 KZG SRS, proving key, verifying key, and artifact fixture"
+
+[[bin]]
+name = "halo2-decryption-proof-keygen"
+path = "src/main.rs"
+
+[dependencies]
+halo2-decryption-proof-circuit = { path = "../circuit" }
+halo2_axiom = { workspace = true }
+sha2 = { workspace = true, features = ["std"] }
+hex = { workspace = true, features = ["std"] }
+serde = { workspace = true, features = ["derive", "std"] }
+serde_json = { workspace = true }
+rand_chacha = { workspace = true }
+rand_core = { workspace = true }

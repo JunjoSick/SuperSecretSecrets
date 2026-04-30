@@ -3,6 +3,7 @@ import App from './App';
 import Landing from './pages/Landing';
 import Encode from './pages/Encode';
 import Recover from './pages/Recover';
+import Verify from './pages/Verify';
 import About from './pages/About';
 
 // Strip trailing slash so "/foo/" becomes "/foo" (React Router convention).
@@ -17,6 +18,7 @@ export const router = createBrowserRouter(
         { index: true, element: <Landing /> },
         { path: 'encode', element: <Encode /> },
         { path: 'recover', element: <Recover /> },
+        { path: 'verify', element: <Verify /> },
         { path: 'about', element: <About /> },
       ],
     },

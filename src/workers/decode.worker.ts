@@ -1,19 +1,70 @@
-import { decodeBundle, type DecodeBundleResult } from '../crypto';
+import { decodeBundleAsync } from '../crypto';
+import type { DecodeWorkerRequest, WorkerEvent, WorkerProgressEvent } from './protocol';
 
-type DecodeRequest = {
-  id: number;
-  payloads: string[];
-  passphrase?: string;
-  vaultBlob?: Uint8Array;
+const cancelled = new Set<number>();
+const controllers = new Map<number, AbortController>();
+
+function post(event: WorkerEvent): void {
+  self.postMessage(event);
+}
+
+self.onmessage = (event: MessageEvent<DecodeWorkerRequest>) => {
+  const request = event.data;
+  if (request.type === 'cancel') {
+    cancelled.add(request.id);
+    controllers.get(request.id)?.abort();
+    return;
+  }
+
+  void handleDecode(request);
 };
 
-type DecodeResponse = {
-  id: number;
-  result: DecodeBundleResult;
-};
-
-self.onmessage = (event: MessageEvent<DecodeRequest>) => {
-  const { id, payloads, passphrase, vaultBlob } = event.data;
-  const result = decodeBundle(payloads, { passphrase, vaultBlob });
-  self.postMessage({ id, result } satisfies DecodeResponse);
-};
+async function handleDecode(request: Extract<DecodeWorkerRequest, { type: 'decode' }>): Promise<void> {
+  const { id, payloads, passphrase, vaultBlob } = request;
+  cancelled.delete(id);
+  const controller = new AbortController();
+  controllers.set(id, controller);
+  try {
+    const result = await decodeBundleAsync(payloads, {
+      passphrase,
+      vaultBlob,
+      signal: controller.signal,
+      onVdfProgress: (progress) => {
+        if (cancelled.has(id)) throw new Error('decode cancelled');
+        post({
+          type: 'progress',
+          id,
+          stage: 'vdf-unlock',
+          done: progress.done.toString(),
+          total: progress.total.toString(),
+          shareIdx: progress.shareIdx,
+          shareOrdinal: progress.shareOrdinal,
+          shareTotal: progress.shareTotal,
+        } satisfies WorkerProgressEvent);
+      },
+      onZkProgress: (progress) => {
+        if (cancelled.has(id)) throw new Error('decode cancelled');
+        post({
+          type: 'progress',
+          id,
+          stage: 'zk-verify',
+          done: progress.done.toString(),
+          total: progress.total.toString(),
+          label: progress.check,
+          status: progress.status,
+        } satisfies WorkerProgressEvent);
+      },
+    });
+    if (cancelled.has(id)) return;
+    post({ type: 'result', id, op: 'decode', result });
+  } catch (error) {
+    post({
+      type: 'error',
+      id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  } finally {
+    cancelled.delete(id);
+    controllers.delete(id);
+  }
+}

@@ -1,9 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { QrScanner } from '../components/QrScanner';
-import { inspectQr, type DecodeBundleResult, type VaultEntry } from '../crypto';
-import { KIND_HEADER, KIND_SHARE } from '../crypto/codec';
+import { WorkerProgressCard } from '../components/WorkerProgress';
+import {
+  createVaultDisclosure,
+  encodeVaultDisclosure,
+  inspectQr,
+  type DecodeBundleResult,
+  type DecryptionProofVerification,
+  type DecodedShareMetadata,
+  type VaultEntry,
+} from '../crypto';
+import { KIND_HEADER, KIND_SHARE, TLV_DECRYPTION_PROOF } from '../crypto/codec';
 import { triggerDownload } from '../lib/zip';
+import type { DecodeWorkerRequest, WorkerEvent, WorkerProgressEvent } from '../workers/protocol';
 
 type ScannedQr = {
   payload: string;
@@ -15,6 +25,7 @@ type ScannedQr = {
   shareIdx?: number;
   threshold?: number;
   passphraseProtected?: boolean;
+  decryptionProof?: 'present' | 'missing';
 };
 
 type VaultBlobFile = {
@@ -32,6 +43,7 @@ type ScanProgress = {
   sharesSeen: number;
   threshold: number | null;
   passphraseRequired: boolean | null;
+  decryptionProof: 'unknown' | 'present' | 'missing';
 };
 
 function hex(b: Uint8Array): string {
@@ -68,6 +80,10 @@ function entryText(entry: VaultEntry): string | null {
   }
 }
 
+function isImageEntry(entry: VaultEntry): boolean {
+  return entry.contentType?.toLowerCase().startsWith('image/') ?? false;
+}
+
 function downloadVaultEntry(entry: VaultEntry): void {
   const copy = new Uint8Array(entry.data);
   triggerDownload(
@@ -78,6 +94,11 @@ function downloadVaultEntry(entry: VaultEntry): void {
   );
 }
 
+function disclosureFileName(entry: VaultEntry): string {
+  const base = (entry.name || entry.id || 'vault-entry').replace(/[^A-Za-z0-9._-]+/g, '_');
+  return `${base}.ssss-disclosure.json`;
+}
+
 export default function Recover() {
   const [scanned, setScanned] = useState<ScannedQr[]>([]);
   const [passphrase, setPassphrase] = useState('');
@@ -85,6 +106,7 @@ export default function Recover() {
   const [vaultErr, setVaultErr] = useState<string | null>(null);
   const [decodeResult, setDecodeResult] = useState<DecodeBundleResult | null>(null);
   const [decoding, setDecoding] = useState(false);
+  const [decodeProgress, setDecodeProgress] = useState<WorkerProgressEvent | null>(null);
   const [revealed, setRevealed] = useState(false);
   const [copyOk, setCopyOk] = useState(false);
   const decodeSeq = useRef(0);
@@ -97,6 +119,8 @@ export default function Recover() {
         const parsed = inspectQr(raw);
         const isHeader = parsed.kind === KIND_HEADER;
         const isShare = parsed.kind === KIND_SHARE;
+        const hasDecryptionProof =
+          isHeader && parsed.extensions?.some((extension) => extension.tagId === TLV_DECRYPTION_PROOF);
         return [
           ...prev,
           {
@@ -108,6 +132,7 @@ export default function Recover() {
             shareIdx: isShare ? parsed.shareIdx : undefined,
             threshold: isHeader || isShare ? parsed.t : undefined,
             passphraseProtected: isHeader ? parsed.flags.passphrase : undefined,
+            decryptionProof: isHeader ? (hasDecryptionProof ? 'present' : 'missing') : undefined,
             detail: isHeader
               ? `header chunk ${parsed.chunkIdx + 1}/${parsed.chunkTotal}`
               : isShare
@@ -138,12 +163,17 @@ export default function Recover() {
   }, [scanned]);
 
   const scanProgress = useMemo(() => getScanProgress(scanned), [scanned]);
+  const scannedMetadata = useMemo(
+    () => (decodeResult && 'metadata' in decodeResult ? decodeResult.metadata : []),
+    [decodeResult],
+  );
 
   useEffect(() => {
     workerRef.current?.terminate();
     decodeSeq.current++;
     setDecodeResult(null);
     setDecoding(false);
+    setDecodeProgress(null);
     setRevealed(false);
     setCopyOk(false);
   }, [payloads, passphrase, vaultBlob]);
@@ -168,13 +198,23 @@ export default function Recover() {
     workerRef.current = worker;
     setDecoding(true);
     setDecodeResult(null);
+    setDecodeProgress(null);
     setRevealed(false);
     setCopyOk(false);
 
-    worker.onmessage = (event: MessageEvent<{ id: number; result: DecodeBundleResult }>) => {
+    worker.onmessage = (event: MessageEvent<WorkerEvent>) => {
       if (event.data.id !== decodeSeq.current) return;
-      setDecodeResult(event.data.result);
+      if (event.data.type === 'progress') {
+        setDecodeProgress(event.data);
+        return;
+      }
+      if (event.data.type === 'result' && event.data.op === 'decode') {
+        setDecodeResult(event.data.result);
+      } else if (event.data.type === 'error') {
+        setDecodeResult({ status: 'error', error: event.data.error });
+      }
       setDecoding(false);
+      setDecodeProgress(null);
       worker.terminate();
       if (workerRef.current === worker) workerRef.current = null;
     };
@@ -183,11 +223,18 @@ export default function Recover() {
       if (id !== decodeSeq.current) return;
       setDecodeResult({ status: 'error', error: 'decryption worker failed' });
       setDecoding(false);
+      setDecodeProgress(null);
       worker.terminate();
       if (workerRef.current === worker) workerRef.current = null;
     };
 
-    worker.postMessage({ id, payloads, passphrase: passphrase || undefined, vaultBlob: vaultBlob?.bytes });
+    worker.postMessage({
+      type: 'decode',
+      id,
+      payloads,
+      passphrase: passphrase || undefined,
+      vaultBlob: vaultBlob?.bytes,
+    } satisfies DecodeWorkerRequest);
   };
 
   const copy = async () => {
@@ -223,7 +270,7 @@ export default function Recover() {
       <div className="grid gap-6 lg:grid-cols-[1.35fr_390px]">
         <div className="flex flex-col gap-4">
           <QrScanner onPayload={addPayload} />
-          <ScannedList items={scanned} onRemove={removeAt} />
+          <ScannedList items={scanned} metadata={scannedMetadata} onRemove={removeAt} />
           {scanned.length > 0 && (
             <div className="flex justify-end">
               <button className="btn-ghost text-xs" onClick={clear}>
@@ -239,7 +286,10 @@ export default function Recover() {
             count={scanned.length}
             decoding={decoding}
             decrypted={decodeResult?.status === 'ok'}
+            workerProgress={decodeProgress}
           />
+
+          <AuditProofPanel progress={scanProgress} result={decodeResult} />
 
           <VaultBlobPanel
             vaultBlob={vaultBlob}
@@ -401,6 +451,7 @@ function VaultRecovered({
   vaultBlobName?: string;
 }) {
   const [revealed, setRevealed] = useState<Set<string>>(() => new Set());
+  const [disclosureErr, setDisclosureErr] = useState<string | null>(null);
   const toggleReveal = (id: string) => {
     setRevealed((current) => {
       const next = new Set(current);
@@ -408,6 +459,23 @@ function VaultRecovered({
       else next.add(id);
       return next;
     });
+  };
+  const disclose = (entry: VaultEntry) => {
+    if (!result.vault || !result.vaultTreeRoot) return;
+    const disclosure = createVaultDisclosure(result.vault, entry.id, {
+      bundleId: result.bundleId,
+      vaultId: result.vaultId,
+      root: result.vaultTreeRoot,
+    });
+    if ('status' in disclosure) {
+      setDisclosureErr(disclosure.error);
+      return;
+    }
+    setDisclosureErr(null);
+    triggerDownload(
+      new Blob([encodeVaultDisclosure(disclosure)], { type: 'application/json' }),
+      disclosureFileName(entry),
+    );
   };
 
   return (
@@ -432,8 +500,14 @@ function VaultRecovered({
         </div>
       ) : (
         <div className="mt-4 space-y-3">
+          {disclosureErr && (
+            <div className="border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-200">
+              {disclosureErr}
+            </div>
+          )}
           {result.vault.entries.map((entry) => {
             const text = entryText(entry);
+            const image = isImageEntry(entry);
             const isRevealed = revealed.has(entry.id);
             return (
               <div key={entry.id} className="border border-amber-300/20 bg-black/25 p-3">
@@ -454,6 +528,11 @@ function VaultRecovered({
                     <button className="btn-primary px-3 py-1.5 text-[10px]" onClick={() => downloadVaultEntry(entry)}>
                       Download
                     </button>
+                    {result.vaultTreeRoot && (
+                      <button className="btn-outline px-3 py-1.5 text-[10px]" onClick={() => disclose(entry)}>
+                        Disclose
+                      </button>
+                    )}
                   </div>
                 </div>
                 {text !== null && isRevealed && (
@@ -461,6 +540,7 @@ function VaultRecovered({
                     {text}
                   </pre>
                 )}
+                {image && <VaultImagePreview entry={entry} />}
               </div>
             );
           })}
@@ -470,16 +550,43 @@ function VaultRecovered({
   );
 }
 
+function VaultImagePreview({ entry }: { entry: VaultEntry }) {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const nextUrl = URL.createObjectURL(
+      new Blob([entry.data.slice().buffer as ArrayBuffer], {
+        type: entry.contentType ?? 'application/octet-stream',
+      }),
+    );
+    setUrl(nextUrl);
+    return () => URL.revokeObjectURL(nextUrl);
+  }, [entry]);
+
+  if (!url) return null;
+  return (
+    <div className="mt-3 border border-amber-300/20 bg-black/35 p-2">
+      <img
+        src={url}
+        alt={entry.name}
+        className="max-h-80 w-full object-contain"
+      />
+    </div>
+  );
+}
+
 function Progress({
   progress,
   count,
   decoding,
   decrypted,
+  workerProgress,
 }: {
   progress: ScanProgress;
   count: number;
   decoding: boolean;
   decrypted: boolean;
+  workerProgress: WorkerProgressEvent | null;
 }) {
   if (count === 0) {
     return (
@@ -491,10 +598,11 @@ function Progress({
   }
   if (decoding) {
     return (
-      <div className="card p-5">
-        <h3 className="text-sm font-semibold text-ink-100">Progress</h3>
-        <p className="mt-2 text-sm text-ink-400">Decrypting locally…</p>
-      </div>
+      <WorkerProgressCard
+        title="Decrypting bundle"
+        fallback="Decrypting locally."
+        progress={workerProgress}
+      />
     );
   }
   if (!progress.ready) {
@@ -544,6 +652,7 @@ function getScanProgress(scanned: ScannedQr[]): ScanProgress {
       sharesSeen: 0,
       threshold: null,
       passphraseRequired: null,
+      decryptionProof: 'unknown',
     };
   }
 
@@ -574,6 +683,8 @@ function getScanProgress(scanned: ScannedQr[]): ScanProgress {
   const passphraseRequired =
     best.find((s) => s.kind === 'header' && s.passphraseProtected !== undefined)
       ?.passphraseProtected ?? null;
+  const headerZero = best.find((s) => s.kind === 'header' && s.chunkIdx === 0);
+  const decryptionProof = headerZero?.decryptionProof ?? 'unknown';
 
   return {
     ready:
@@ -586,7 +697,137 @@ function getScanProgress(scanned: ScannedQr[]): ScanProgress {
     sharesSeen: shareIndexes.size,
     threshold,
     passphraseRequired,
+    decryptionProof,
   };
+}
+
+function AuditProofPanel({
+  progress,
+  result,
+}: {
+  progress: ScanProgress;
+  result: DecodeBundleResult | null;
+}) {
+  const status = auditProofStatus(progress, result);
+  const style = auditProofStyle(status.tone);
+  return (
+    <div className={['card p-5', style.card].join(' ')}>
+      <div className={['mono-upper', style.kicker].join(' ')}>auditor proof</div>
+      <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
+        <h3 className="min-w-0 text-sm font-semibold leading-5 text-ink-100">{status.title}</h3>
+        <span className={['chip', style.chip].join(' ')}>{status.chip}</span>
+      </div>
+      <p className="mt-2 text-xs leading-6 text-ink-400">{status.body}</p>
+    </div>
+  );
+}
+
+function auditProofStatus(
+  progress: ScanProgress,
+  result: DecodeBundleResult | null,
+): { tone: 'neutral' | 'ok' | 'warn' | 'bad'; chip: string; title: string; body: string } {
+  if (result?.status === 'ok') {
+    return decryptionProofStatus(result.decryptionProof);
+  }
+  if (result?.status === 'error' && result.error.toLowerCase().includes('decryption proof')) {
+    return {
+      tone: 'bad',
+      chip: 'failed',
+      title: 'Proof claim failed',
+      body: result.error,
+    };
+  }
+  if (progress.decryptionProof === 'present') {
+    return {
+      tone: 'warn',
+      chip: 'pending',
+      title: 'Proof claim detected',
+      body: 'Proof found; verification will run before the recovered secret is trusted.',
+    };
+  }
+  if (progress.decryptionProof === 'missing') {
+    return {
+      tone: 'neutral',
+      chip: 'missing',
+      title: 'No proof TLV',
+      body: 'No auditor decryption proof is present. Recovery security is unchanged.',
+    };
+  }
+  return {
+    tone: 'neutral',
+    chip: 'unknown',
+    title: 'Header needed',
+    body: 'Scan header chunk 1 to inspect bundle-level proof status.',
+  };
+}
+
+function decryptionProofStatus(
+  proof: DecryptionProofVerification | undefined,
+): { tone: 'neutral' | 'ok' | 'warn' | 'bad'; chip: string; title: string; body: string } {
+  if (!proof) {
+    return {
+      tone: 'neutral',
+      chip: 'missing',
+      title: 'No proof TLV',
+      body: 'Recovery succeeded without an auditor decryption proof.',
+    };
+  }
+  switch (proof.status) {
+    case 'verified':
+      return {
+        tone: 'ok',
+        chip: 'verified',
+        title: 'Verified auditor decryption proof',
+        body: `Verified: this v3 vault-root bundle matches the registered proof relation, transcript digest, and published Poseidon2 proof-facing commitments. The current Halo2 milestone proves the vault-root commitment and transcript binding.${
+          proof.label ? ` Verifier: ${proof.label}.` : ''
+        }`,
+      };
+    case 'unsupported':
+      return {
+        tone: 'warn',
+        chip: 'unsupported',
+        title: 'Proof verifier unavailable',
+        body: `This proof relation or verifier artifact is not supported by this app. Scheme ${proof.schemeId} is present.`,
+      };
+    case 'invalid':
+    case 'tampered':
+    case 'malformed':
+      return {
+        tone: 'bad',
+        chip: proof.status,
+        title: 'Invalid auditor decryption proof',
+        body: `The proof claim is malformed, tampered, or does not match this bundle. ${proof.reason}`,
+      };
+  }
+}
+
+function auditProofStyle(tone: 'neutral' | 'ok' | 'warn' | 'bad'): { card: string; chip: string; kicker: string } {
+  switch (tone) {
+    case 'ok':
+      return {
+        card: 'border-emerald-400/30 bg-emerald-500/5',
+        chip: 'border-emerald-400/30 text-emerald-200',
+        kicker: 'text-emerald-300',
+      };
+    case 'warn':
+      return {
+        card: 'border-amber-300/30 bg-amber-500/5',
+        chip: 'border-amber-300/30 text-amber-200',
+        kicker: 'text-amber-300',
+      };
+    case 'bad':
+      return {
+        card: 'border-red-500/30 bg-red-500/5',
+        chip: 'border-red-500/30 text-red-300',
+        kicker: 'text-red-300',
+      };
+    case 'neutral':
+      return {
+        card: 'border-white/10 bg-white/[0.02]',
+        chip: 'border-white/10 text-ink-400',
+        kicker: 'text-ink-500',
+      };
+  }
 }
 
 function PassphrasePanel({
@@ -702,12 +943,15 @@ function ProgressRing({ current, total }: { current: number; total: number }) {
 
 function ScannedList({
   items,
+  metadata,
   onRemove,
 }: {
   items: ScannedQr[];
+  metadata: DecodedShareMetadata[];
   onRemove: (i: number) => void;
 }) {
   if (items.length === 0) return null;
+  const metadataByShare = new Map(metadata.map((entry) => [entry.shareIdx, entry]));
   return (
     <div className="card p-4">
       <div className="mono-upper mb-3">
@@ -738,6 +982,11 @@ function ScannedList({
                   bundle {it.bundleId.slice(0, 8)}…
                 </span>
               )}
+              {it.kind === 'share' && typeof it.shareIdx === 'number' && metadataByShare.has(it.shareIdx) && (
+                <span className={zkChipClass(metadataByShare.get(it.shareIdx)!.zkVerification)}>
+                  {zkChipLabel(metadataByShare.get(it.shareIdx)!.zkVerification)}
+                </span>
+              )}
             </div>
             <button
               className="text-ink-400 hover:text-red-300"
@@ -751,4 +1000,27 @@ function ScannedList({
       </ul>
     </div>
   );
+}
+
+function zkChipLabel(status: DecodedShareMetadata['zkVerification']): string {
+  switch (status) {
+    case 'verified':
+      return 'ZK OK';
+    case 'tampered':
+      return 'ZK BAD';
+    case 'unverified':
+      return 'ZK ?';
+  }
+}
+
+function zkChipClass(status: DecodedShareMetadata['zkVerification']): string {
+  const base = 'chip shrink-0';
+  switch (status) {
+    case 'verified':
+      return `${base} border-emerald-400/30 text-emerald-200`;
+    case 'tampered':
+      return `${base} border-red-500/30 text-red-300`;
+    case 'unverified':
+      return `${base} border-white/10 text-ink-400`;
+  }
 }

@@ -60,16 +60,20 @@ export default function Landing() {
             <span className="text-accent-200">N physical QR shares</span>. Any{' '}
             <span className="text-accent-200">T shares</span> reconstructs the plaintext.
             Anything less reveals <em className="text-ink-100"> mathematically nothing</em>.
+            Optional v3 layers bind the policy, prove share openings, disclose one vault
+            entry at a time, and add per-share VDF delay.
           </p>
 
-          <div className="mt-8 grid gap-4 border-t border-white/10 pt-6 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-8 grid gap-4 border-t border-white/10 pt-6 sm:grid-cols-2 lg:grid-cols-3">
             <Proof label="ML-KEM-768" value="NIST PQ · level 3" />
             <Proof label="AES-256-GCM" value="AEAD · 128-bit tag" />
             <Proof label="Shamir T-of-N" value="GF(2^8) · thresholded" />
             <Proof label="Argon2id" value="optional pass layer" />
+            <Proof label="v3 ZK layer" value="commit · prove · disclose" />
+            <Proof label="v3 VDF lock" value="sequential share delay" />
           </div>
 
-          <div className="mt-10 grid gap-4 sm:grid-cols-2">
+          <div className="mt-10 grid gap-4 sm:grid-cols-3">
             <RouteCard
               to="/encode"
               step="01"
@@ -82,6 +86,12 @@ export default function Landing() {
               step="02"
               verb="Recover"
               desc="Ingest T shares → unseal plaintext"
+            />
+            <RouteCard
+              to="/verify"
+              step="03"
+              verb="Verify"
+              desc="Check one-entry vault proof"
             />
           </div>
         </motion.div>
@@ -111,8 +121,8 @@ export default function Landing() {
         </div>
 
         <div className="absolute bottom-6 left-6 right-72 flex justify-between text-[10px] uppercase tracking-[0.14em] text-ink-500">
-          <span>kyber lattice · visualization</span>
-          <span>sigma = 2.1 · n = 768</span>
+          <span>ml-kem lattice · v3 overlays</span>
+          <span>zk commit · vdf lock · vault proof</span>
         </div>
       </aside>
     </div>
@@ -255,6 +265,11 @@ function CryptoDiagram() {
         ))}
         <rect x="260" y="260" width="40" height="40" fill="rgb(8 11 14)" stroke="rgb(93 220 255)" />
         <rect x="270" y="270" width="20" height="20" fill="rgb(93 220 255)" />
+        <g fontSize="9" textAnchor="middle" fill="rgb(150 235 255)">
+          <text x="280" y="143">ZK COMMIT</text>
+          <text x="407" y="325">VDF LOCK</text>
+          <text x="153" y="325">DISCLOSE</text>
+        </g>
       </svg>
     </div>
   );

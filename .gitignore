@@ -7,3 +7,6 @@ coverage
 .env
 .env.local
 tsconfig.tsbuildinfo
+.codex
+toImplementYet.md
+crates/halo2-decryption-proof/target/

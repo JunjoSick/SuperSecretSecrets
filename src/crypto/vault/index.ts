@@ -20,6 +20,10 @@ export type VaultInfo = {
   formatVersion: number;
 };
 
+export type DecryptVaultOptions = {
+  entryId?: string;
+};
+
 type VaultManifest = {
   entries: Array<{ id: string; name: string; contentType?: string }>;
 };
@@ -89,7 +93,11 @@ export function encryptVault(
   return enc.encode(JSON.stringify(json));
 }
 
-export function decryptVault(rootKey: Uint8Array, blob: Uint8Array): VaultPlaintext {
+export function decryptVault(
+  rootKey: Uint8Array,
+  blob: Uint8Array,
+  opts: DecryptVaultOptions = {},
+): VaultPlaintext {
   assertRootKey(rootKey);
   const json = parseVaultBlob(blob);
   const vaultId = fromHex(json.vaultId);
@@ -101,7 +109,11 @@ export function decryptVault(rootKey: Uint8Array, blob: Uint8Array): VaultPlaint
   );
   const manifest = JSON.parse(dec.decode(manifestPlaintext)) as VaultManifest;
   const encryptedById = new Map(json.entries.map((entry) => [entry.id, entry]));
-  const entries = manifest.entries.map((manifestEntry) => {
+  const manifestEntries = opts.entryId
+    ? manifest.entries.filter((entry) => entry.id === opts.entryId)
+    : manifest.entries;
+  if (opts.entryId && manifestEntries.length === 0) throw new Error(`vault entry ${opts.entryId} not found`);
+  const entries = manifestEntries.map((manifestEntry) => {
     const encrypted = encryptedById.get(manifestEntry.id);
     if (!encrypted) throw new Error(`vault entry ${manifestEntry.id} missing ciphertext`);
     const item: VaultEntry = {

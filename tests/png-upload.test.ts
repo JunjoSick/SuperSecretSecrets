@@ -3,6 +3,7 @@ import QRCode from 'qrcode';
 import jsQR from 'jsqr';
 import { PNG } from 'pngjs';
 import { encodeSecret, inspectQr, decodeSecret } from '../src/crypto';
+import { renderDataUrl } from '../src/qr/generate';
 
 /**
  * Exercise the *actual* PNG-upload path that breaks in the browser:
@@ -22,16 +23,16 @@ async function dataUrlToPng(dataUrl: string) {
 }
 
 async function renderAndScan(text: string, size = 480) {
-  const dataUrl = await QRCode.toDataURL(text, {
-    errorCorrectionLevel: 'M',
-    margin: 2,
-    width: size,
-    color: { dark: '#000000', light: '#ffffff' },
-  });
+  const dataUrl = await renderDataUrl(text, { ecc: 'M', size });
   const { rgba, w, h } = await dataUrlToPng(dataUrl);
   const code = jsQR(rgba, w, h, { inversionAttempts: 'attemptBoth' });
   if (!code) throw new Error('jsQR returned null');
   return code.data;
+}
+
+function denseBase45LikePayload(length: number): string {
+  const alphabet = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:';
+  return Array.from({ length }, (_, i) => alphabet[(i * 17 + i * i) % alphabet.length]!).join('');
 }
 
 describe('PNG-upload pipeline (real PNG bytes)', () => {
@@ -70,5 +71,12 @@ describe('PNG-upload pipeline (real PNG bytes)', () => {
     );
     const result = decodeSecret([...headers, ...shares]);
     expect(result.status).toBe('ok');
+  });
+
+  it('dense version-32 payload scans from generated PNG at ZIP minimum size', async () => {
+    const payload = denseBase45LikePayload(2189);
+    const qr = QRCode.create(payload, { errorCorrectionLevel: 'M' });
+    expect(qr.version).toBe(32);
+    await expect(renderAndScan(payload, 480)).resolves.toBe(payload);
   });
 });

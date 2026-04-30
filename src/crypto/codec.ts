@@ -6,6 +6,7 @@ export const MAGIC = new Uint8Array([0x53, 0x53, 0x53, 0x31]); // "SSS1"
 export const MAGIC_V2 = new Uint8Array([0x53, 0x53, 0x53, 0x32]); // "SSS2"
 export const VERSION = 1;
 export const VERSION_V2 = 2;
+export const VERSION_V3 = 3;
 
 export const KIND_HEADER = 0x01;
 export const KIND_SHARE = 0x02;
@@ -18,6 +19,14 @@ export const TLV_POLICY_MANIFEST = 0x04;
 export const TLV_VAULT_INFO = 0x05;
 export const TLV_TIMELOCK = 0x06;
 export const TLV_PAYLOAD_FORMAT = 0x07;
+export const TLV_POLICY_COMMITMENT = 0x08;
+export const TLV_PLAINTEXT_COMMITMENT = 0x09;
+export const TLV_VAULT_TREE_ROOT = 0x0a;
+export const TLV_SHARE_COMMIT_PROOF = 0x0b;
+export const TLV_VDF_PARAMS = 0x0c;
+export const TLV_VDF_LOCK = 0x0d;
+export const TLV_VDF_PROOF = 0x0e;
+export const TLV_DECRYPTION_PROOF = 0x0f;
 
 export type HeaderFlags = {
   passphrase: boolean;
@@ -80,6 +89,14 @@ const KNOWN_TLV_TAGS = new Set([
   TLV_VAULT_INFO,
   TLV_TIMELOCK,
   TLV_PAYLOAD_FORMAT,
+  TLV_POLICY_COMMITMENT,
+  TLV_PLAINTEXT_COMMITMENT,
+  TLV_VAULT_TREE_ROOT,
+  TLV_SHARE_COMMIT_PROOF,
+  TLV_VDF_PARAMS,
+  TLV_VDF_LOCK,
+  TLV_VDF_PROOF,
+  TLV_DECRYPTION_PROOF,
 ]);
 
 function assertBytes(a: Uint8Array, prefix: Uint8Array): boolean {
@@ -268,6 +285,26 @@ export function encodeHeaderChunkV2(
   return out;
 }
 
+export function encodeHeaderChunkV3(
+  h: Omit<HeaderChunkQr, 'kind' | 'version' | 'extensions' | 'warnings'> & {
+    extensions?: Tlv[];
+  },
+): Uint8Array {
+  const out = encodeHeaderChunkV2(h);
+  out[4] = VERSION_V3;
+  return out;
+}
+
+export function encodeShareV3(
+  s: Omit<ShareQr, 'kind' | 'version' | 'extensions' | 'warnings'> & {
+    extensions?: Tlv[];
+  },
+): Uint8Array {
+  const out = encodeShareV2(s);
+  out[4] = VERSION_V3;
+  return out;
+}
+
 export function encodeShareV2(
   s: Omit<ShareQr, 'kind' | 'version' | 'extensions' | 'warnings'> & {
     extensions?: Tlv[];
@@ -299,7 +336,12 @@ export function encodeShareV2(
 }
 
 export function parse(raw: Uint8Array): ParsedQr {
-  if (assertBytes(raw, MAGIC_V2)) return parseV2(raw);
+  if (assertBytes(raw, MAGIC_V2)) {
+    if (raw.length < 5) throw new Error('truncated SSS2 frame');
+    const version = raw[4];
+    if (version === VERSION_V2 || version === VERSION_V3) return parseV2OrV3(raw);
+    throw new Error(`unsupported SSS2 version ${version}`);
+  }
   if (!assertBytes(raw, MAGIC)) throw new Error('not a SuperSecretSecrets QR (bad magic)');
   return parseV1(raw);
 }
@@ -361,10 +403,12 @@ function parseV1(raw: Uint8Array): ParsedQr {
   throw new Error(`unknown QR kind 0x${kind.toString(16)}`);
 }
 
-function parseV2(raw: Uint8Array): ParsedQr {
+function parseV2OrV3(raw: Uint8Array): ParsedQr {
   ensureLen(raw, 6, 'SSS2 frame header');
   const version = raw[4]!;
-  if (version !== VERSION_V2) throw new Error(`unsupported version ${version}`);
+  if (version !== VERSION_V2 && version !== VERSION_V3) {
+    throw new Error(`unsupported version ${version}`);
+  }
   const kind = raw[5]!;
   ensureLen(raw, 14, 'SSS2 bundle id');
   const bundleId = raw.slice(6, 14);

@@ -1,0 +1,32 @@
+[package]
+name = "halo2-decryption-proof-wasm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+rust-version.workspace = true
+description = "wasm-bindgen FFI for the SSS v3 Halo2 decryption proof backend"
+
+[lib]
+name = "halo2_decryption_proof_wasm"
+path = "src/lib.rs"
+crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+halo2-decryption-proof-circuit = { path = "../circuit" }
+halo2_axiom = { workspace = true }
+rand_core = { workspace = true, features = ["getrandom"] }
+zeroize = { workspace = true, features = ["alloc", "derive"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = { version = "0.2", default-features = false, features = ["std"] }
+js-sys = { version = "0.3", default-features = false }
+console_error_panic_hook = { version = "0.1", default-features = false, optional = true }
+getrandom = { workspace = true, features = ["js"] }
+
+[dev-dependencies]
+rand_chacha = { workspace = true }
+
+[features]
+default = []
+panic-hook = ["dep:console_error_panic_hook"]
