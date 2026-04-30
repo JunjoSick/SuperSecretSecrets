@@ -62,8 +62,12 @@ export function QrCard({ title, subtitle, accent = 'share', payload, ecc = 'M', 
           accent === 'header' ? 'bg-accent-500/10 text-accent-200' : 'bg-white/[0.035] text-ink-300',
         ].join(' ')}
       >
-        <span>{title}</span>
-        {subtitle && <span className="text-[10px] normal-case tracking-normal text-ink-300">{subtitle}</span>}
+        <span className="min-w-0 break-words">{title}</span>
+        {subtitle && (
+          <span className="min-w-0 break-words text-right text-[10px] normal-case tracking-normal text-ink-300">
+            {subtitle}
+          </span>
+        )}
       </div>
       <div className="flex flex-col items-center gap-3 p-4">
         <div className="aspect-square w-full max-w-[280px] border border-white/10 bg-white p-3">

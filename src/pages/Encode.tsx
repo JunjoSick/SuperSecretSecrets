@@ -48,6 +48,14 @@ export default function Encode() {
   const lines = Math.max(text.split('\n').length, 18);
   const vaultMode = opts.vaultMode === true || imagePayload !== null;
   const proofState = proofUiState({ ...opts, vaultMode });
+  const payloadLabel = imagePayload
+    ? `${imagePayload.name} · ${formatBytes(imagePayload.data.length)}`
+    : text.trim().length > 0
+    ? `${bytes} byte${bytes === 1 ? '' : 's'}`
+    : 'awaiting payload';
+  const suiteLabel = `${opts.kemAlg.toUpperCase()} / ${
+    opts.aeadAlg === 'aes-256-gcm' ? 'AES-GCM' : 'ChaCha20'
+  }`;
 
   useEffect(() => {
     setDraftShares(opts.shares);
@@ -195,180 +203,237 @@ export default function Encode() {
   };
 
   return (
-    <div className="mx-auto max-w-7xl px-6 pb-24 pt-10">
-      <header className="mb-6 flex items-end justify-between gap-4 no-print">
-        <div>
+    <div className="mx-auto max-w-7xl px-4 pb-24 pt-8 sm:px-6 lg:pt-10">
+      <header className="mb-6 grid gap-4 no-print lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+        <div className="min-w-0">
           <div className="mono-upper">01 · encode</div>
-          <h1 className="mt-2 text-3xl font-medium tracking-tight text-ink-50">Seal a secret into recoverable QR shares.</h1>
+          <h1 className="mt-2 text-balance text-3xl font-medium tracking-tight text-ink-50">
+            Seal a secret into recoverable QR shares.
+          </h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-ink-400">
             Build a local-only bundle with post-quantum encapsulation, threshold recovery, optional vault export, and v3 audit commitments.
           </p>
         </div>
+        <EncodeCrumbs active={bundle ? 'shares' : busy ? 'sealing' : canGenerate ? 'parameters' : 'payload'} />
       </header>
 
       {!bundle ? (
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(320px,410px)]">
-          <section className="card overflow-hidden">
-            <label className="block">
-              <span className="block border-b border-white/10 px-4 py-3 text-[10px] font-medium uppercase tracking-[0.14em] text-ink-400">
-                editor · utf-8 plaintext
-              </span>
-              <div className="grid grid-cols-[52px_1fr]">
-                <div className="line-gutter">
-                  {Array.from({ length: lines }).map((_, i) => (
-                    <div key={i}>{String(i + 1).padStart(2, '0')}</div>
-                  ))}
+        <>
+          <OperationStrip
+            items={[
+              ['mode', vaultMode ? 'vault · blob' : 'plaintext'],
+              ['payload', payloadLabel],
+              ['threshold', `${draftThreshold} of ${draftShares}`],
+              ['suite', suiteLabel],
+              ['proof', proofState.badge],
+            ]}
+          />
+
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(340px,420px)]">
+            <section className="grid min-w-0 gap-4">
+              <section className="card overflow-hidden">
+                <div className="grid gap-4 border-b border-white/10 bg-white/[0.025] p-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,24rem)] lg:items-start">
+                  <div className="min-w-0">
+                    <div className="mono-upper">payload composer</div>
+                    <h2 className="mt-2 text-lg font-medium tracking-tight text-ink-50">
+                      {vaultMode ? 'Build the vault payload.' : 'Paste the plaintext payload.'}
+                    </h2>
+                    <p className="mt-1 max-w-xl text-xs leading-5 text-ink-400">
+                      {vaultMode
+                        ? 'The QR shares recover the key; the vault blob carries the sealed file content.'
+                        : 'The QR shares carry everything needed to recover this plaintext.'}
+                    </p>
+                  </div>
+                  <div className="grid min-w-0 grid-cols-2 gap-2">
+                    <ModeButton
+                      active={!vaultMode}
+                      label="Plaintext"
+                      detail="QR only"
+                      onClick={() => {
+                        clearImagePayload();
+                        setOpts({ ...opts, vaultMode: false, vaultEntries: undefined });
+                      }}
+                    />
+                    <ModeButton
+                      active={vaultMode}
+                      label="Vault"
+                      detail="QR + blob"
+                      onClick={() => setOpts({ ...opts, vaultMode: true })}
+                    />
+                  </div>
                 </div>
-                <textarea
-                  className="min-h-[380px] resize-none bg-transparent px-5 py-4 font-mono text-sm leading-relaxed text-ink-50 outline-none placeholder:text-ink-500"
-                  placeholder="Type or paste the text you want to protect…"
-                  value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  autoFocus
-                  spellCheck={false}
-                />
-              </div>
-            </label>
-            <ImagePayloadPanel
-              image={imagePayload}
-              stripMetadata={stripImageMetadata}
-              onStripMetadataChange={setStripImageMetadata}
-              onImport={importImage}
-              onClear={clearImagePayload}
-            />
-            <div className="flex items-center justify-between border-t border-white/10 bg-white/[0.035] px-4 py-2 text-[10px] uppercase tracking-[0.14em] text-ink-500">
-              <span>
-                {imagePayload
-                  ? `${formatBytes(imagePayload.data.length)} image · ${
-                      imagePayload.metadataMode === 'stripped' ? 'metadata stripped' : 'exact bytes'
-                    }`
-                  : `${bytes} byte${bytes === 1 ? '' : 's'}${bytes > 1024 ? ' · header will span multiple QR codes' : ''}`}
-              </span>
-              {err && <span className="text-red-300">{err}</span>}
-            </div>
-          </section>
 
-          <aside className="flex flex-col gap-4">
-            <div className="card p-5">
-              <div className="mono-upper">threshold</div>
-              <h3 className="mt-2 text-sm font-semibold text-ink-100">Trustees</h3>
-              <p className="mt-1 text-xs text-ink-400">
-                Any <span className="font-mono text-ink-200">{draftThreshold}</span> of{' '}
-                <span className="font-mono text-ink-200">{draftShares}</span> trustees can help you
-                recover.
-              </p>
-              <div className="mt-4 space-y-4">
-                <Slider
-                  label="Total recipients (N)"
-                  min={2}
-                  max={12}
-                  value={opts.shares}
-                  draftValue={draftShares}
-                  onDraft={(v) => {
-                    setDraftShares(v);
-                    setDraftThreshold((current) => Math.min(current, v));
-                  }}
-                  onCommit={(v) =>
-                    setOpts({
-                      ...opts,
-                      shares: v,
-                      threshold: Math.min(opts.threshold, v),
-                    })
-                  }
-                />
-                <Slider
-                  label="Threshold (T)"
-                  min={2}
-                  max={draftShares}
-                  value={opts.threshold}
-                  draftValue={draftThreshold}
-                  onDraft={setDraftThreshold}
-                  onCommit={(v) => setOpts({ ...opts, threshold: v })}
-                />
-              </div>
-              <SharePreview shares={draftShares} threshold={draftThreshold} />
-            </div>
+                <label className="block">
+                  <span className="sr-only">Plaintext payload</span>
+                  <div className="grid grid-cols-[44px_minmax(0,1fr)] sm:grid-cols-[52px_minmax(0,1fr)]">
+                    <div className="line-gutter">
+                      {Array.from({ length: lines }).map((_, i) => (
+                        <div key={i}>{String(i + 1).padStart(2, '0')}</div>
+                      ))}
+                    </div>
+                    <textarea
+                      className="block min-h-[340px] w-full resize-y bg-transparent px-4 py-4 font-mono text-sm leading-relaxed text-ink-50 outline-none placeholder:text-ink-500 sm:min-h-[390px] sm:px-5"
+                      placeholder="Type or paste the text you want to protect..."
+                      value={text}
+                      onChange={(e) => setText(e.target.value)}
+                      autoFocus
+                      spellCheck={false}
+                    />
+                  </div>
+                </label>
 
-            <div className="card p-5">
-              <div className="mono-upper">payload mode</div>
-              <h3 className="mt-2 text-sm font-semibold text-ink-100">
-                {vaultMode ? 'Vault blob' : 'Single secret'}
-              </h3>
-              <p className="mt-1 text-xs leading-5 text-ink-400">
-                {vaultMode
-                  ? 'QR codes unlock an exported .ssssvault file; keep both.'
-                  : 'QR codes carry everything needed to recover this plaintext.'}
-              </p>
-              <div className="mt-4 grid grid-cols-2 gap-2">
-                <ModeButton
-                  active={!vaultMode}
-                  label="Single"
-                  detail="QR only"
-                  onClick={() => {
-                    clearImagePayload();
-                    setOpts({ ...opts, vaultMode: false, vaultEntries: undefined });
-                  }}
+                <ImagePayloadPanel
+                  image={imagePayload}
+                  stripMetadata={stripImageMetadata}
+                  onStripMetadataChange={setStripImageMetadata}
+                  onImport={importImage}
+                  onClear={clearImagePayload}
                 />
-                <ModeButton
-                  active={vaultMode}
-                  label="Vault"
-                  detail="QR + blob"
-                  onClick={() => setOpts({ ...opts, vaultMode: true })}
-                />
-              </div>
-            </div>
 
-            <SettingsPanel opts={opts} setOpts={setOpts} ecc={ecc} setEcc={setEcc} />
+                <div className="grid gap-2 border-t border-white/10 bg-white/[0.035] px-4 py-2 text-[10px] uppercase tracking-[0.14em] text-ink-500 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                  <span className="min-w-0 break-words">
+                    {imagePayload
+                      ? `${formatBytes(imagePayload.data.length)} image · ${
+                          imagePayload.metadataMode === 'stripped' ? 'metadata stripped' : 'exact bytes'
+                        }`
+                      : `${bytes} byte${bytes === 1 ? '' : 's'}${bytes > 1024 ? ' · header will span multiple QR codes' : ''}`}
+                  </span>
+                  {err && <span className="min-w-0 break-words text-red-300">{err}</span>}
+                </div>
+              </section>
+            </section>
 
-            <div className="card p-5">
-              <div className="mono-upper mb-4">pipeline preview</div>
-              <PipelineStep idx="01" title="Derive key" body="HKDF with optional Argon2id pass layer" active />
-              <PipelineStep idx="02" title="Encrypt payload" body={vaultMode ? 'AEAD over the vault root key' : 'AEAD over the plaintext'} active />
-              <PipelineStep idx="03" title="Encapsulate" body="ML-KEM public-key recovery envelope" active />
-              <PipelineStep idx="04" title={vaultMode ? 'Export vault' : 'Split seed'} body={vaultMode ? 'Vault blob plus QR shares' : 'Shamir threshold shares'} active />
-              {opts.zk && (
-                <PipelineStep idx="05" title="Commit v3 state" body="Policy, plaintext, shares, and vault tree" active />
-              )}
-              {opts.vdf && (
-                <PipelineStep idx={opts.zk ? '06' : '05'} title="VDF-lock shares" body="Sequential class-group delay per share" active />
-              )}
-              <PipelineStep
-                idx={opts.vdf ? (opts.zk ? '07' : '06') : opts.zk ? '06' : '05'}
-                title="Audit proof"
-                body={proofState.pipeline}
-                active={proofState.ready}
+            <aside className="flex min-w-0 flex-col gap-4">
+              <OperationDigest
+                rows={[
+                  ['payload', payloadLabel],
+                  ['cipher suite', suiteLabel],
+                  ['secret sharing', `Shamir ${draftThreshold}-of-${draftShares}`],
+                  ['QR resilience', `ECC ${ecc}`],
+                  ['output', vaultMode ? 'header QR + share QR + .ssssvault' : 'header QR + share QR'],
+                ]}
               />
-            </div>
 
-            <div className={['card p-5', proofState.card].join(' ')}>
-              <div className={['mono-upper', proofState.kicker].join(' ')}>auditor proof</div>
-              <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
-                <h3 className="min-w-0 text-sm font-semibold leading-5 text-ink-100">{proofState.title}</h3>
-                <span className={['chip', proofState.chip].join(' ')}>{proofState.badge}</span>
+              <div className="card overflow-hidden">
+                <div className="border-b border-white/10 bg-white/[0.025] p-5">
+                  <div className="mono-upper">threshold</div>
+                  <div className="mt-3 flex flex-wrap items-end justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="text-sm font-semibold text-ink-100">Trustee distribution</h3>
+                      <p className="mt-1 text-xs leading-5 text-ink-400">
+                        Any <span className="font-mono text-ink-200">{draftThreshold}</span> of{' '}
+                        <span className="font-mono text-ink-200">{draftShares}</span> shares can recover.
+                      </p>
+                    </div>
+                    <span className="chip border-accent-300/30 text-accent-200">
+                      loss budget {Math.max(0, draftShares - draftThreshold)}
+                    </span>
+                  </div>
+                </div>
+                <div className="p-5">
+                  <div className="space-y-4">
+                    <Slider
+                      label="Total recipients (N)"
+                      min={2}
+                      max={12}
+                      value={opts.shares}
+                      draftValue={draftShares}
+                      onDraft={(v) => {
+                        setDraftShares(v);
+                        setDraftThreshold((current) => Math.min(current, v));
+                      }}
+                      onCommit={(v) =>
+                        setOpts({
+                          ...opts,
+                          shares: v,
+                          threshold: Math.min(opts.threshold, v),
+                        })
+                      }
+                    />
+                    <Slider
+                      label="Threshold (T)"
+                      min={2}
+                      max={draftShares}
+                      value={opts.threshold}
+                      draftValue={draftThreshold}
+                      onDraft={setDraftThreshold}
+                      onCommit={(v) => setOpts({ ...opts, threshold: v })}
+                    />
+                  </div>
+                  <SharePreview shares={draftShares} threshold={draftThreshold} />
+                </div>
               </div>
-              <p className="mt-2 text-xs leading-6 text-ink-400">{proofState.body}</p>
-            </div>
 
-            {busy && (
-              <WorkerProgressCard
-                title="Generating bundle"
-                fallback="Preparing cryptographic material."
-                progress={encodeProgress}
-              />
-            )}
+              <SettingsPanel opts={opts} setOpts={setOpts} ecc={ecc} setEcc={setEcc} />
 
-            <div className={busy ? 'grid grid-cols-[1fr_auto] gap-2' : ''}>
-              <button className="btn-primary py-3 text-base" disabled={!canGenerate} onClick={generate}>
-                {busy ? 'Generating…' : 'Generate QR codes'}
-              </button>
+              <div className="card p-5">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div className="mono-upper">pipeline preview</div>
+                  <span className="text-[10px] uppercase tracking-[0.14em] text-accent-300">local only</span>
+                </div>
+                <PipelineStep idx="01" title="Derive key" body="HKDF with optional Argon2id pass layer" active />
+                <PipelineStep
+                  idx="02"
+                  title={vaultMode ? 'Seal vault root' : 'Encrypt payload'}
+                  body={vaultMode ? 'AEAD protects the vault root key and exported blob' : 'AEAD protects the plaintext bytes'}
+                  active
+                />
+                <PipelineStep idx="03" title="Encapsulate" body="ML-KEM public-key recovery envelope" active />
+                <PipelineStep
+                  idx="04"
+                  title={vaultMode ? 'Emit vault package' : 'Split seed'}
+                  body={vaultMode ? 'Vault blob plus QR shares' : 'Shamir threshold shares'}
+                  active
+                />
+                {opts.zk && (
+                  <PipelineStep idx="05" title="Commit v3 state" body="Policy, plaintext, shares, and vault tree" active />
+                )}
+                {opts.vdf && (
+                  <PipelineStep
+                    idx={opts.zk ? '06' : '05'}
+                    title="VDF-lock shares"
+                    body="Sequential class-group delay per share"
+                    active
+                  />
+                )}
+                <PipelineStep
+                  idx={opts.vdf ? (opts.zk ? '07' : '06') : opts.zk ? '06' : '05'}
+                  title="Auditor proof"
+                  body={proofState.pipeline}
+                  active={proofState.ready}
+                />
+              </div>
+
+              <div className={['card p-5', proofState.card].join(' ')}>
+                <div className={['mono-upper', proofState.kicker].join(' ')}>auditor proof</div>
+                <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
+                  <h3 className="min-w-0 text-sm font-semibold leading-5 text-ink-100">{proofState.title}</h3>
+                  <span className={['chip', proofState.chip].join(' ')}>{proofState.badge}</span>
+                </div>
+                <p className="mt-2 text-xs leading-6 text-ink-400">{proofState.body}</p>
+              </div>
+
               {busy && (
-                <button className="btn-outline py-3 text-sm" type="button" onClick={cancelGenerate}>
-                  Cancel
-                </button>
+                <WorkerProgressCard
+                  title="Generating bundle"
+                  fallback="Preparing cryptographic material."
+                  progress={encodeProgress}
+                />
               )}
-            </div>
-          </aside>
-        </div>
+
+              <div className="card grid gap-3 p-4">
+                <button className="btn-primary min-h-12 text-sm sm:text-base" disabled={!canGenerate} onClick={generate}>
+                  {busy ? 'Generating bundle' : 'Seal and generate shares'}
+                </button>
+                {busy && (
+                  <button className="btn-outline min-h-11 text-sm" type="button" onClick={cancelGenerate}>
+                    Cancel
+                  </button>
+                )}
+              </div>
+            </aside>
+          </div>
+        </>
       ) : (
         <BundleView
           bundle={bundle}
@@ -492,25 +557,36 @@ function ImagePayloadPanel({
   onImport: (file: File | null) => void;
   onClear: () => void;
 }) {
+  const [dragOver, setDragOver] = useState(false);
+
   return (
-    <div className="border-t border-white/10 bg-black/10 px-4 py-3">
+    <div className="border-t border-white/10 bg-black/10 p-4">
       {!image ? (
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="text-[10px] font-medium uppercase tracking-[0.14em] text-ink-400">
-              image payload
-            </div>
-            <label className="mt-2 inline-flex items-center gap-2 text-xs text-ink-300">
-              <input
-                type="checkbox"
-                checked={stripMetadata}
-                onChange={(e) => onStripMetadataChange(e.target.checked)}
-              />
-              Strip metadata
-            </label>
-          </div>
-          <label className="btn-outline cursor-pointer text-xs">
-            Choose image
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+          <label
+            className={[
+              'grid min-h-28 cursor-pointer gap-2 border border-dashed px-4 py-4 transition-colors',
+              dragOver
+                ? 'border-accent-300/60 bg-accent-500/10'
+                : 'border-white/10 bg-white/[0.025] hover:border-white/25 hover:bg-white/[0.04]',
+            ].join(' ')}
+            onDragEnter={() => setDragOver(true)}
+            onDragLeave={() => setDragOver(false)}
+            onDragOver={(event) => {
+              event.preventDefault();
+              setDragOver(true);
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              setDragOver(false);
+              void onImport(event.dataTransfer.files?.[0] ?? null);
+            }}
+          >
+            <span className="mono-upper">image payload</span>
+            <span className="max-w-xl text-sm font-medium text-ink-100">Drop an image or choose one for vault mode.</span>
+            <span className="text-xs leading-5 text-ink-400">
+              Image bytes are sealed into a .ssssvault blob while the QR shares recover the decryption key.
+            </span>
             <input
               type="file"
               accept="image/*"
@@ -521,17 +597,41 @@ function ImagePayloadPanel({
               }}
             />
           </label>
+          <div className="flex flex-wrap items-center gap-3 lg:block lg:min-w-[9rem]">
+            <label className="inline-flex items-center gap-2 text-xs text-ink-300 lg:mb-3 lg:flex">
+              <input
+                type="checkbox"
+                className="accent-accent-500"
+                checked={stripMetadata}
+                onChange={(e) => onStripMetadataChange(e.target.checked)}
+              />
+              <span>Strip metadata</span>
+            </label>
+            <label className="btn-outline cursor-pointer text-xs">
+              Choose image
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  void onImport(e.target.files?.[0] ?? null);
+                  e.currentTarget.value = '';
+                }}
+              />
+            </label>
+          </div>
         </div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-[112px_1fr_auto] sm:items-center">
+        <div className="grid gap-4 sm:grid-cols-[112px_minmax(0,1fr)_auto] sm:items-center">
           <img
             src={image.previewUrl}
             alt=""
-            className="h-24 w-28 border border-white/10 object-contain"
+            className="h-24 w-28 border border-white/10 bg-black/20 object-contain"
           />
           <div className="min-w-0">
-            <div className="truncate text-sm font-medium text-ink-100">{image.name}</div>
-            <div className="mt-1 flex flex-wrap gap-2 text-[10px] uppercase tracking-[0.14em] text-ink-500">
+            <div className="mono-upper">vault image</div>
+            <div className="mt-1 min-w-0 break-words text-sm font-medium text-ink-100">{image.name}</div>
+            <div className="mt-2 flex flex-wrap gap-2 text-[10px] uppercase tracking-[0.14em] text-ink-500">
               <span>{formatBytes(image.data.length)}</span>
               <span>{image.contentType}</span>
               <span>{image.metadataMode === 'stripped' ? 'stripped' : 'exact bytes'}</span>
@@ -612,6 +712,18 @@ function BundleView({
         </div>
       </div>
 
+      <BundleIntegrityStrip
+        bid={bid}
+        mode={hasVaultBlob ? 'vault · blob' : 'plaintext'}
+        suite={`${bundle.options.kemAlg.toUpperCase()} / ${
+          bundle.options.aeadAlg === 'aes-256-gcm' ? 'AES-GCM' : 'ChaCha20'
+        }`}
+        threshold={`${bundle.options.threshold} of ${bundle.options.shares}`}
+        extras={[bundle.options.zk && 'v3 commitments', bundle.options.vdf && 'VDF lock', hasVaultBlob && '.ssssvault']
+          .filter(Boolean)
+          .join(' · ') || 'none'}
+      />
+
       <fieldset className="card no-print mb-4 flex flex-wrap items-center gap-3 px-4 py-3 text-xs text-ink-300">
         <legend className="sr-only">ZIP contents</legend>
         <span className="font-medium text-ink-100">ZIP includes</span>
@@ -634,10 +746,13 @@ function BundleView({
         {!canDownload && <span className="text-red-300">Pick at least one format.</span>}
       </fieldset>
 
-      <div className="mb-4 border border-dashed border-white/10 bg-white/[0.025] px-4 py-3 text-xs text-ink-400 no-print">
-        Scan <strong className="text-ink-200">all {bundle.headerQrs.length} header QR{bundle.headerQrs.length > 1 ? 's' : ''}</strong>{' '}
-        plus any <strong className="text-ink-200">{bundle.options.threshold}</strong> of the{' '}
-        {bundle.options.shares} share QRs to recover. {hasVaultBlob ? 'Recover also needs the .ssssvault blob.' : 'Keep trustees physically separated.'}
+      <div className="no-print mb-4 grid gap-3 border border-dashed border-white/10 bg-white/[0.025] px-4 py-3 text-xs leading-5 text-ink-400 md:grid-cols-[auto_1fr] md:items-center">
+        <span className="chip border-accent-300/30 text-accent-200">recovery set</span>
+        <span className="min-w-0 break-words">
+          Scan <strong className="text-ink-200">all {bundle.headerQrs.length} header QR{bundle.headerQrs.length > 1 ? 's' : ''}</strong>{' '}
+          plus any <strong className="text-ink-200">{bundle.options.threshold}</strong> of the{' '}
+          {bundle.options.shares} share QRs to recover. {hasVaultBlob ? 'Recover also needs the .ssssvault blob.' : 'Keep trustees physically separated.'}
+        </span>
       </div>
       {bundle.options.zk && (
         <div className="mb-4 grid gap-3 border border-amber-300/20 bg-amber-500/5 px-4 py-3 text-xs text-amber-100 no-print md:grid-cols-[auto_1fr] md:items-center">
@@ -696,6 +811,106 @@ function ZipOption({
       />
       {label}
     </label>
+  );
+}
+
+function EncodeCrumbs({ active }: { active: 'payload' | 'parameters' | 'sealing' | 'shares' }) {
+  const activeId = active === 'sealing' ? 'shares' : active;
+  const items = [
+    ['payload', 'Plaintext'],
+    ['parameters', 'Parameters'],
+    ['shares', active === 'sealing' ? 'Sealing' : 'Shares'],
+  ] as const;
+  const activeIndex = items.findIndex(([id]) => id === activeId);
+
+  return (
+    <div className="hidden max-w-full flex-wrap items-center justify-end gap-2 text-[10px] uppercase tracking-[0.14em] text-ink-500 md:flex">
+      {items.map(([id, label], index) => {
+        const activeItem = id === activeId;
+        const done = index < activeIndex;
+        return (
+          <div key={id} className="flex min-w-0 items-center gap-2">
+            {index > 0 && <span className="text-ink-600">/</span>}
+            <span className={activeItem ? 'text-accent-200' : done ? 'text-ink-300' : 'text-ink-600'}>
+              {String(index + 1).padStart(2, '0')} {label}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function OperationStrip({ items }: { items: Array<[string, string]> }) {
+  return (
+    <div className="card no-print mb-6 grid overflow-hidden sm:grid-cols-2 lg:grid-cols-5">
+      {items.map(([label, value], index) => (
+        <div
+          key={label}
+          className={[
+            'min-w-0 border-white/10 px-4 py-3',
+            index < items.length - 1 ? 'border-b sm:border-r lg:border-b-0' : '',
+            index === 1 ? 'lg:border-b-0' : '',
+          ].join(' ')}
+        >
+          <div className="mono-upper">{label}</div>
+          <div className="mt-1 min-w-0 break-words text-xs leading-5 text-ink-100">{value}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function OperationDigest({ rows }: { rows: Array<[string, string]> }) {
+  return (
+    <section className="card p-5">
+      <div className="mono-upper">operation digest</div>
+      <div className="mt-4 grid gap-1">
+        {rows.map(([label, value]) => (
+          <div key={label} className="grid grid-cols-[7rem_minmax(0,1fr)] gap-3 border-b border-dashed border-white/10 py-2 text-xs">
+            <span className="min-w-0 break-words uppercase tracking-[0.08em] text-ink-500">{label}</span>
+            <span className="min-w-0 break-words text-right text-ink-100">{value}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function BundleIntegrityStrip({
+  bid,
+  mode,
+  suite,
+  threshold,
+  extras,
+}: {
+  bid: string;
+  mode: string;
+  suite: string;
+  threshold: string;
+  extras: string;
+}) {
+  return (
+    <div className="card no-print mb-4 grid overflow-hidden sm:grid-cols-2 lg:grid-cols-5">
+      {[
+        ['bundle id', bid.slice(0, 8)],
+        ['mode', mode],
+        ['suite', suite],
+        ['threshold', threshold],
+        ['extras', extras],
+      ].map(([label, value], index) => (
+        <div
+          key={label}
+          className={[
+            'min-w-0 border-white/10 px-4 py-3',
+            index < 4 ? 'border-b sm:border-r lg:border-b-0' : '',
+          ].join(' ')}
+        >
+          <div className="mono-upper">{label}</div>
+          <div className="mt-1 min-w-0 break-words text-xs leading-5 text-ink-100">{value}</div>
+        </div>
+      ))}
+    </div>
   );
 }
 

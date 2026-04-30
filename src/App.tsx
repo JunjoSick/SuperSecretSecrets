@@ -4,21 +4,21 @@ export default function App() {
   return (
     <div className="flex min-h-screen flex-col">
       <header className="no-print sticky top-0 z-20 border-b border-white/10 bg-ink-950/80 backdrop-blur-md">
-        <div className="mx-auto grid max-w-7xl grid-cols-[1fr_auto_1fr] items-center gap-6 px-6 py-3">
-          <Link to="/" className="flex items-center gap-3 font-semibold tracking-tight">
+        <div className="mx-auto grid max-w-7xl gap-3 px-4 py-3 sm:px-6 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:items-center lg:gap-6">
+          <Link to="/" className="flex min-w-0 items-center justify-center gap-3 font-semibold tracking-tight lg:justify-start">
             <LogoMark />
-            <span className="text-ink-50">superSecretSecrets</span>
+            <span className="min-w-0 break-words text-ink-50">superSecretSecrets</span>
             <span className="hidden text-[10px] uppercase tracking-[0.14em] text-ink-500 sm:inline">
               v0.1 · client-side only
             </span>
           </Link>
-          <nav className="flex items-center justify-center gap-2 text-xs uppercase tracking-[0.14em]">
+          <nav className="flex flex-wrap items-center justify-center gap-2 text-xs uppercase tracking-[0.14em]">
             <NavItem to="/encode">Encode</NavItem>
             <NavItem to="/recover">Recover</NavItem>
             <NavItem to="/verify">Verify</NavItem>
             <NavItem to="/about">About</NavItem>
           </nav>
-          <div className="hidden justify-end sm:flex">
+          <div className="hidden justify-end lg:flex">
             <StatusPill />
           </div>
         </div>
