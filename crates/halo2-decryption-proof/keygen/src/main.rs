@@ -18,13 +18,19 @@ use halo2_axiom::{
     SerdeFormat,
 };
 use halo2_decryption_proof_circuit::{
+    artifacts::EXPECTED_K,
     circuit::{VaultRootCommitmentCircuit, VAULT_ROOT_COMMITMENT_MIN_K},
     relation::{relation_v1_vaultroot_only_digest, RELATION_V1_VAULTROOT_ONLY_ID},
 };
+#[cfg(feature = "dev-unsafe-srs")]
 use rand_chacha::ChaCha20Rng;
+#[cfg(feature = "dev-unsafe-srs")]
 use rand_core::SeedableRng;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
+
+#[cfg(all(feature = "production-artifacts", feature = "dev-unsafe-srs"))]
+compile_error!("production-artifacts and dev-unsafe-srs cannot both be enabled");
 
 const DEFAULT_OUTPUT_DIR: &str = "target/halo2-vaultroot-only-artifact";
 const ARTIFACT_SCHEMA: &str = "sss-v3-halo2-artifact-v1";
@@ -45,7 +51,10 @@ const WASM_BUILD_FILE: &str = "wasm-build.wasm";
 const MANIFEST_FILE: &str = "artifact-manifest.json";
 
 const SERDE_FORMAT: SerdeFormat = SerdeFormat::Processed;
+const SRS_SERDE_FORMAT: SerdeFormat = SerdeFormat::RawBytes;
 const SERDE_FORMAT_NAME: &str = "processed";
+const SRS_SERDE_FORMAT_NAME: &str = "raw-bytes";
+#[cfg(feature = "dev-unsafe-srs")]
 const SRS_SOURCE_DETERMINISTIC_DEV: &str = "deterministic-dev";
 const SRS_SOURCE_EXTERNAL: &str = "external";
 
@@ -107,9 +116,10 @@ struct Config {
 impl Config {
     fn parse(args: impl IntoIterator<Item = String>) -> Result<Self, ParseOutcome> {
         let mut output_dir = PathBuf::from(DEFAULT_OUTPUT_DIR);
-        let mut k = VAULT_ROOT_COMMITMENT_MIN_K;
+        let mut k = EXPECTED_K;
         let mut srs_input = None;
         let mut wasm_input = None;
+        #[allow(unused_mut)]
         let mut allow_dev_srs = false;
 
         let args = args.into_iter().collect::<Vec<_>>();
@@ -153,7 +163,16 @@ impl Config {
                         })?));
                 }
                 "--allow-dev-srs" => {
-                    allow_dev_srs = true;
+                    #[cfg(not(feature = "dev-unsafe-srs"))]
+                    {
+                        return Err(ParseOutcome::Error(
+                            "--allow-dev-srs requires the dev-unsafe-srs cargo feature".into(),
+                        ));
+                    }
+                    #[cfg(feature = "dev-unsafe-srs")]
+                    {
+                        allow_dev_srs = true;
+                    }
                 }
                 unknown => {
                     return Err(ParseOutcome::Error(format!("unknown argument: {unknown}")));
@@ -294,6 +313,7 @@ fn generate_artifact(config: &Config) -> Result<GeneratedArtifact, Box<dyn Error
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SrsSource {
+    #[cfg(feature = "dev-unsafe-srs")]
     DeterministicDev,
     External,
 }
@@ -301,6 +321,7 @@ enum SrsSource {
 impl SrsSource {
     fn as_str(self) -> &'static str {
         match self {
+            #[cfg(feature = "dev-unsafe-srs")]
             Self::DeterministicDev => SRS_SOURCE_DETERMINISTIC_DEV,
             Self::External => SRS_SOURCE_EXTERNAL,
         }
@@ -312,7 +333,7 @@ fn load_or_generate_srs(
 ) -> Result<(ParamsKZG<Bn256>, Vec<u8>, SrsSource), Box<dyn Error>> {
     if let Some(path) = &config.srs_input {
         let bytes = fs::read(path)?;
-        let params = ParamsKZG::<Bn256>::read_custom(&mut &bytes[..], SERDE_FORMAT)?;
+        let params = ParamsKZG::<Bn256>::read_custom(&mut &bytes[..], SRS_SERDE_FORMAT)?;
         if params.k() != config.k {
             return Err(format!(
                 "SRS k mismatch: --k is {}, but {} contains k={}",
@@ -332,11 +353,22 @@ fn load_or_generate_srs(
         );
     }
 
-    let mut rng = ChaCha20Rng::from_seed(dev_srs_seed(config.k));
-    let params = ParamsKZG::<Bn256>::setup(config.k, &mut rng);
+    generate_dev_srs(config.k)
+}
+
+#[cfg(feature = "dev-unsafe-srs")]
+fn generate_dev_srs(k: u32) -> Result<(ParamsKZG<Bn256>, Vec<u8>, SrsSource), Box<dyn Error>> {
+    eprintln!("WARNING: dev-unsafe-srs enabled. Never use deterministic setup in production.");
+    let mut rng = ChaCha20Rng::from_seed(dev_srs_seed(k));
+    let params = ParamsKZG::<Bn256>::setup(k, &mut rng);
     let mut bytes = Vec::new();
-    params.write_custom(&mut bytes, SERDE_FORMAT)?;
+    params.write_custom(&mut bytes, SRS_SERDE_FORMAT)?;
     Ok((params, bytes, SrsSource::DeterministicDev))
+}
+
+#[cfg(not(feature = "dev-unsafe-srs"))]
+fn generate_dev_srs(_k: u32) -> Result<(ParamsKZG<Bn256>, Vec<u8>, SrsSource), Box<dyn Error>> {
+    Err("deterministic development SRS generation is not compiled in; pass --srs-in with a pinned SRS or rebuild with --no-default-features --features dev-unsafe-srs for local tests".into())
 }
 
 fn write_artifact(output_dir: &Path, artifact: &GeneratedArtifact) -> Result<(), Box<dyn Error>> {
@@ -362,17 +394,19 @@ fn write_artifact(output_dir: &Path, artifact: &GeneratedArtifact) -> Result<(),
     Ok(())
 }
 
+#[cfg(feature = "dev-unsafe-srs")]
 fn dev_srs_seed(k: u32) -> [u8; 32] {
     sha256_bytes(format!("SSS/v3/halo2-kzg-bn254/dev-srs/v1;k={k}").as_bytes())
 }
 
 fn trusted_setup_id_bytes(k: u32, source: &SrsSource, srs_hash: &[u8; 32]) -> Vec<u8> {
     let source_label = match source {
+        #[cfg(feature = "dev-unsafe-srs")]
         SrsSource::DeterministicDev => SRS_SOURCE_DETERMINISTIC_DEV,
         SrsSource::External => SRS_SOURCE_EXTERNAL,
     };
     format!(
-        "sss-v3-halo2-kzg-bn254-srs-v1\nsource={source_label}\nk={k}\nsrsSha256={}\nserde={SERDE_FORMAT_NAME}\n",
+        "sss-v3-halo2-kzg-bn254-srs-v1\nsource={source_label}\nk={k}\nsrsSha256={}\nserde={SRS_SERDE_FORMAT_NAME}\n",
         hex::encode(srs_hash)
     )
     .into_bytes()
@@ -496,16 +530,25 @@ mod tests {
     fn parses_default_config() {
         let config = Config::parse(Vec::<String>::new()).expect("defaults parse");
         assert_eq!(config.output_dir, PathBuf::from(DEFAULT_OUTPUT_DIR));
-        assert_eq!(config.k, VAULT_ROOT_COMMITMENT_MIN_K);
+        assert_eq!(config.k, EXPECTED_K);
         assert_eq!(config.srs_input, None);
         assert_eq!(config.wasm_input, None);
         assert!(!config.allow_dev_srs);
     }
 
     #[test]
+    #[cfg(feature = "dev-unsafe-srs")]
     fn parses_explicit_dev_srs_gate() {
         let config = Config::parse(vec!["--allow-dev-srs".into()]).expect("config parses");
         assert!(config.allow_dev_srs);
+    }
+
+    #[test]
+    #[cfg(not(feature = "dev-unsafe-srs"))]
+    fn rejects_dev_srs_gate_when_feature_is_disabled() {
+        let err =
+            Config::parse(vec!["--allow-dev-srs".into()]).expect_err("config rejects dev SRS");
+        assert!(matches!(err, ParseOutcome::Error(message) if message.contains("dev-unsafe-srs")));
     }
 
     #[test]

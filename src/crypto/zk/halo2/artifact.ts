@@ -1,5 +1,9 @@
 import { sha256 } from '@noble/hashes/sha2.js';
-import { DECRYPTION_PROOF_DIGEST_BYTES } from '../decryption-proof-relations';
+import {
+  DECRYPTION_PROOF_DIGEST_BYTES,
+  DECRYPTION_PROOF_SCHEME_HALO2_KZG,
+  RELATION_V1_ID,
+} from '../decryption-proof-relations';
 
 export const HALO2_VERIFIER_ARTIFACT_DIGEST_DOMAIN =
   'SSS/v3/decryption-proof/verifier-artifact/v1';
@@ -20,6 +24,36 @@ export const PCS_IPA = 0x02;
 export const CURVE_BN254 = 0x01;
 export const CURVE_BLS12_381 = 0x02;
 export const CURVE_PALLAS_VESTA = 0x03;
+
+export const HALO2_KZG_BN254 = DECRYPTION_PROOF_SCHEME_HALO2_KZG;
+export const EXPECTED_K = 14;
+export const RELATION_ID = RELATION_V1_ID;
+
+// TODO: replace placeholder digests with real production artifact hashes.
+export const TRUSTED_SETUP_DIGEST = new Uint8Array([
+  0xea, 0x72, 0x57, 0xf0, 0xea, 0x1f, 0x78, 0x4d,
+  0x62, 0x91, 0xef, 0x5a, 0x55, 0x85, 0xc7, 0x59,
+  0xc8, 0xdd, 0x17, 0x85, 0x92, 0x9a, 0xd9, 0xe7,
+  0xe9, 0xda, 0x51, 0xae, 0xd2, 0x22, 0x6a, 0x64,
+]);
+export const PROVING_KEY_DIGEST = new Uint8Array(32);
+export const VERIFYING_KEY_DIGEST = new Uint8Array(32);
+export const PUBLIC_INPUT_SCHEMA_DIGEST = new Uint8Array(32);
+export const PROOF_ARTIFACT_DIGEST = new Uint8Array(32);
+
+export const HALO2_ARTIFACT_METADATA = {
+  manifestVersion: 1,
+  schemeId: HALO2_KZG_BN254,
+  pcsId: PCS_KZG,
+  curveId: CURVE_BN254,
+  expectedK: EXPECTED_K,
+  relationId: RELATION_ID,
+  trustedSetupDigest: TRUSTED_SETUP_DIGEST,
+  provingKeyDigest: PROVING_KEY_DIGEST,
+  verifyingKeyDigest: VERIFYING_KEY_DIGEST,
+  publicInputSchemaDigest: PUBLIC_INPUT_SCHEMA_DIGEST,
+  proofArtifactDigest: PROOF_ARTIFACT_DIGEST,
+} as const;
 
 export type Halo2ArtifactMetadata = {
   schemeId: number;

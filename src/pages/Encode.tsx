@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
   DEFAULT_OPTIONS,
   type EncodeOptions,
@@ -35,8 +35,6 @@ export default function Encode() {
   const [zipContent, setZipContent] = useState<ZipContentOptions>(DEFAULT_ZIP_CONTENT);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [draftShares, setDraftShares] = useState(opts.shares);
-  const [draftThreshold, setDraftThreshold] = useState(opts.threshold);
   const [encodeProgress, setEncodeProgress] = useState<WorkerProgressEvent | null>(null);
   const [imagePayload, setImagePayload] = useState<ImagePayload | null>(null);
   const [stripImageMetadata, setStripImageMetadata] = useState(false);
@@ -56,11 +54,6 @@ export default function Encode() {
   const suiteLabel = `${opts.kemAlg.toUpperCase()} / ${
     opts.aeadAlg === 'aes-256-gcm' ? 'AES-GCM' : 'ChaCha20'
   }`;
-
-  useEffect(() => {
-    setDraftShares(opts.shares);
-    setDraftThreshold(opts.threshold);
-  }, [opts.shares, opts.threshold]);
 
   useEffect(() => {
     return () => workerRef.current?.terminate();
@@ -217,13 +210,20 @@ export default function Encode() {
         <EncodeCrumbs active={bundle ? 'shares' : busy ? 'sealing' : canGenerate ? 'parameters' : 'payload'} />
       </header>
 
+      <AnimatePresence mode="wait" initial={false}>
       {!bundle ? (
-        <>
+        <motion.div
+          key="form"
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -6 }}
+          transition={{ duration: 0.25 }}
+        >
           <OperationStrip
             items={[
               ['mode', vaultMode ? 'vault · blob' : 'plaintext'],
               ['payload', payloadLabel],
-              ['threshold', `${draftThreshold} of ${draftShares}`],
+              ['threshold', `${opts.threshold} of ${opts.shares}`],
               ['suite', suiteLabel],
               ['proof', proofState.badge],
             ]}
@@ -235,14 +235,26 @@ export default function Encode() {
                 <div className="grid gap-4 border-b border-white/10 bg-white/[0.025] p-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,24rem)] lg:items-start">
                   <div className="min-w-0">
                     <div className="mono-upper">payload composer</div>
-                    <h2 className="mt-2 text-lg font-medium tracking-tight text-ink-50">
+                    <motion.h2
+                      key={vaultMode ? 'vault-title' : 'plain-title'}
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="mt-2 text-lg font-medium tracking-tight text-ink-50"
+                    >
                       {vaultMode ? 'Build the vault payload.' : 'Paste the plaintext payload.'}
-                    </h2>
-                    <p className="mt-1 max-w-xl text-xs leading-5 text-ink-400">
+                    </motion.h2>
+                    <motion.p
+                      key={vaultMode ? 'vault-sub' : 'plain-sub'}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ duration: 0.25, delay: 0.05 }}
+                      className="mt-1 max-w-xl text-xs leading-5 text-ink-400"
+                    >
                       {vaultMode
                         ? 'The QR shares recover the key; the vault blob carries the sealed file content.'
                         : 'The QR shares carry everything needed to recover this plaintext.'}
-                    </p>
+                    </motion.p>
                   </div>
                   <div className="grid min-w-0 grid-cols-2 gap-2">
                     <ModeButton
@@ -263,39 +275,60 @@ export default function Encode() {
                   </div>
                 </div>
 
-                <label className="block">
-                  <span className="sr-only">Plaintext payload</span>
-                  <div className="grid grid-cols-[44px_minmax(0,1fr)] sm:grid-cols-[52px_minmax(0,1fr)]">
-                    <div className="line-gutter">
-                      {Array.from({ length: lines }).map((_, i) => (
-                        <div key={i}>{String(i + 1).padStart(2, '0')}</div>
-                      ))}
-                    </div>
-                    <textarea
-                      className="block min-h-[340px] w-full resize-y bg-transparent px-4 py-4 font-mono text-sm leading-relaxed text-ink-50 outline-none placeholder:text-ink-500 sm:min-h-[390px] sm:px-5"
-                      placeholder="Type or paste the text you want to protect..."
-                      value={text}
-                      onChange={(e) => setText(e.target.value)}
-                      autoFocus
-                      spellCheck={false}
-                    />
-                  </div>
-                </label>
-
-                <ImagePayloadPanel
-                  image={imagePayload}
-                  stripMetadata={stripImageMetadata}
-                  onStripMetadataChange={setStripImageMetadata}
-                  onImport={importImage}
-                  onClear={clearImagePayload}
-                />
+                <AnimatePresence mode="wait" initial={false}>
+                  {vaultMode ? (
+                    <motion.div
+                      key="vault-input"
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -4 }}
+                      transition={{ duration: 0.2 }}
+                    >
+                      <ImagePayloadPanel
+                        image={imagePayload}
+                        stripMetadata={stripImageMetadata}
+                        onStripMetadataChange={setStripImageMetadata}
+                        onImport={importImage}
+                        onClear={clearImagePayload}
+                      />
+                    </motion.div>
+                  ) : (
+                    <motion.label
+                      key="plain-input"
+                      className="block"
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -4 }}
+                      transition={{ duration: 0.2 }}
+                    >
+                      <span className="sr-only">Plaintext payload</span>
+                      <div className="grid grid-cols-[44px_minmax(0,1fr)] sm:grid-cols-[52px_minmax(0,1fr)]">
+                        <div className="line-gutter">
+                          {Array.from({ length: lines }).map((_, i) => (
+                            <div key={i}>{String(i + 1).padStart(2, '0')}</div>
+                          ))}
+                        </div>
+                        <textarea
+                          className="block min-h-[340px] w-full resize-y bg-transparent px-4 py-4 font-mono text-sm leading-relaxed text-ink-50 outline-none placeholder:text-ink-500 sm:min-h-[390px] sm:px-5"
+                          placeholder="Type or paste the text you want to protect..."
+                          value={text}
+                          onChange={(e) => setText(e.target.value)}
+                          autoFocus
+                          spellCheck={false}
+                        />
+                      </div>
+                    </motion.label>
+                  )}
+                </AnimatePresence>
 
                 <div className="grid gap-2 border-t border-white/10 bg-white/[0.035] px-4 py-2 text-[10px] uppercase tracking-[0.14em] text-ink-500 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
                   <span className="min-w-0 break-words">
-                    {imagePayload
-                      ? `${formatBytes(imagePayload.data.length)} image · ${
-                          imagePayload.metadataMode === 'stripped' ? 'metadata stripped' : 'exact bytes'
-                        }`
+                    {vaultMode
+                      ? imagePayload
+                        ? `${formatBytes(imagePayload.data.length)} image · ${
+                            imagePayload.metadataMode === 'stripped' ? 'metadata stripped' : 'exact bytes'
+                          }`
+                        : 'awaiting image · drag a file or choose one'
                       : `${bytes} byte${bytes === 1 ? '' : 's'}${bytes > 1024 ? ' · header will span multiple QR codes' : ''}`}
                   </span>
                   {err && <span className="min-w-0 break-words text-red-300">{err}</span>}
@@ -304,16 +337,6 @@ export default function Encode() {
             </section>
 
             <aside className="flex min-w-0 flex-col gap-4">
-              <OperationDigest
-                rows={[
-                  ['payload', payloadLabel],
-                  ['cipher suite', suiteLabel],
-                  ['secret sharing', `Shamir ${draftThreshold}-of-${draftShares}`],
-                  ['QR resilience', `ECC ${ecc}`],
-                  ['output', vaultMode ? 'header QR + share QR + .ssssvault' : 'header QR + share QR'],
-                ]}
-              />
-
               <div className="card overflow-hidden">
                 <div className="border-b border-white/10 bg-white/[0.025] p-5">
                   <div className="mono-upper">threshold</div>
@@ -321,12 +344,12 @@ export default function Encode() {
                     <div className="min-w-0">
                       <h3 className="text-sm font-semibold text-ink-100">Trustee distribution</h3>
                       <p className="mt-1 text-xs leading-5 text-ink-400">
-                        Any <span className="font-mono text-ink-200">{draftThreshold}</span> of{' '}
-                        <span className="font-mono text-ink-200">{draftShares}</span> shares can recover.
+                        Any <span className="font-mono text-ink-200">{opts.threshold}</span> of{' '}
+                        <span className="font-mono text-ink-200">{opts.shares}</span> shares can recover.
                       </p>
                     </div>
                     <span className="chip border-accent-300/30 text-accent-200">
-                      loss budget {Math.max(0, draftShares - draftThreshold)}
+                      loss budget {Math.max(0, opts.shares - opts.threshold)}
                     </span>
                   </div>
                 </div>
@@ -337,12 +360,7 @@ export default function Encode() {
                       min={2}
                       max={12}
                       value={opts.shares}
-                      draftValue={draftShares}
-                      onDraft={(v) => {
-                        setDraftShares(v);
-                        setDraftThreshold((current) => Math.min(current, v));
-                      }}
-                      onCommit={(v) =>
+                      onChange={(v) =>
                         setOpts({
                           ...opts,
                           shares: v,
@@ -353,14 +371,12 @@ export default function Encode() {
                     <Slider
                       label="Threshold (T)"
                       min={2}
-                      max={draftShares}
+                      max={opts.shares}
                       value={opts.threshold}
-                      draftValue={draftThreshold}
-                      onDraft={setDraftThreshold}
-                      onCommit={(v) => setOpts({ ...opts, threshold: v })}
+                      onChange={(v) => setOpts({ ...opts, threshold: v })}
                     />
                   </div>
-                  <SharePreview shares={draftShares} threshold={draftThreshold} />
+                  <SharePreview shares={opts.shares} threshold={opts.threshold} />
                 </div>
               </div>
 
@@ -371,37 +387,7 @@ export default function Encode() {
                   <div className="mono-upper">pipeline preview</div>
                   <span className="text-[10px] uppercase tracking-[0.14em] text-accent-300">local only</span>
                 </div>
-                <PipelineStep idx="01" title="Derive key" body="HKDF with optional Argon2id pass layer" active />
-                <PipelineStep
-                  idx="02"
-                  title={vaultMode ? 'Seal vault root' : 'Encrypt payload'}
-                  body={vaultMode ? 'AEAD protects the vault root key and exported blob' : 'AEAD protects the plaintext bytes'}
-                  active
-                />
-                <PipelineStep idx="03" title="Encapsulate" body="ML-KEM public-key recovery envelope" active />
-                <PipelineStep
-                  idx="04"
-                  title={vaultMode ? 'Emit vault package' : 'Split seed'}
-                  body={vaultMode ? 'Vault blob plus QR shares' : 'Shamir threshold shares'}
-                  active
-                />
-                {opts.zk && (
-                  <PipelineStep idx="05" title="Commit v3 state" body="Policy, plaintext, shares, and vault tree" active />
-                )}
-                {opts.vdf && (
-                  <PipelineStep
-                    idx={opts.zk ? '06' : '05'}
-                    title="VDF-lock shares"
-                    body="Sequential class-group delay per share"
-                    active
-                  />
-                )}
-                <PipelineStep
-                  idx={opts.vdf ? (opts.zk ? '07' : '06') : opts.zk ? '06' : '05'}
-                  title="Auditor proof"
-                  body={proofState.pipeline}
-                  active={proofState.ready}
-                />
+                <PipelineList vaultMode={vaultMode} zk={!!opts.zk} vdf={!!opts.vdf} proofState={proofState} />
               </div>
 
               <div className={['card p-5', proofState.card].join(' ')}>
@@ -413,37 +399,69 @@ export default function Encode() {
                 <p className="mt-2 text-xs leading-6 text-ink-400">{proofState.body}</p>
               </div>
 
-              {busy && (
-                <WorkerProgressCard
-                  title="Generating bundle"
-                  fallback="Preparing cryptographic material."
-                  progress={encodeProgress}
-                />
-              )}
+              <AnimatePresence initial={false}>
+                {busy && (
+                  <motion.div
+                    key="progress"
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.2 }}
+                    style={{ overflow: 'hidden' }}
+                  >
+                    <WorkerProgressCard
+                      title="Generating bundle"
+                      fallback="Preparing cryptographic material."
+                      progress={encodeProgress}
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
               <div className="card grid gap-3 p-4">
                 <button className="btn-primary min-h-12 text-sm sm:text-base" disabled={!canGenerate} onClick={generate}>
                   {busy ? 'Generating bundle' : 'Seal and generate shares'}
                 </button>
-                {busy && (
-                  <button className="btn-outline min-h-11 text-sm" type="button" onClick={cancelGenerate}>
-                    Cancel
-                  </button>
-                )}
+                <AnimatePresence initial={false}>
+                  {busy && (
+                    <motion.button
+                      key="cancel"
+                      className="btn-outline min-h-11 text-sm"
+                      type="button"
+                      onClick={cancelGenerate}
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={{ duration: 0.18 }}
+                      style={{ overflow: 'hidden' }}
+                    >
+                      Cancel
+                    </motion.button>
+                  )}
+                </AnimatePresence>
               </div>
             </aside>
           </div>
-        </>
+        </motion.div>
       ) : (
-        <BundleView
-          bundle={bundle}
-          ecc={ecc}
-          zipContent={zipContent}
-          setZipContent={setZipContent}
-          onReset={reset}
-          onDownloadZip={downloadZip}
-        />
+        <motion.div
+          key="bundle"
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -6 }}
+          transition={{ duration: 0.3 }}
+        >
+          <BundleView
+            bundle={bundle}
+            ecc={ecc}
+            zipContent={zipContent}
+            setZipContent={setZipContent}
+            onReset={reset}
+            onDownloadZip={downloadZip}
+          />
+        </motion.div>
       )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -676,11 +694,7 @@ function BundleView({
     );
   };
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35 }}
-    >
+    <>
       <div className="no-print mb-6 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <span className="chip">{bundle.options.kemAlg}</span>
@@ -788,7 +802,7 @@ function BundleView({
           />
         ))}
       </div>
-    </motion.div>
+    </>
   );
 }
 
@@ -861,22 +875,6 @@ function OperationStrip({ items }: { items: Array<[string, string]> }) {
   );
 }
 
-function OperationDigest({ rows }: { rows: Array<[string, string]> }) {
-  return (
-    <section className="card p-5">
-      <div className="mono-upper">operation digest</div>
-      <div className="mt-4 grid gap-1">
-        {rows.map(([label, value]) => (
-          <div key={label} className="grid grid-cols-[7rem_minmax(0,1fr)] gap-3 border-b border-dashed border-white/10 py-2 text-xs">
-            <span className="min-w-0 break-words uppercase tracking-[0.08em] text-ink-500">{label}</span>
-            <span className="min-w-0 break-words text-right text-ink-100">{value}</span>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 function BundleIntegrityStrip({
   bid,
   mode,
@@ -926,19 +924,23 @@ function ModeButton({
   onClick: () => void;
 }) {
   return (
-    <button
+    <motion.button
       type="button"
       onClick={onClick}
+      whileTap={{ scale: 0.98 }}
+      animate={{
+        borderColor: active ? 'rgba(125, 211, 252, 0.6)' : 'rgba(255, 255, 255, 0.1)',
+        backgroundColor: active ? 'rgba(56, 189, 248, 0.1)' : 'rgba(255, 255, 255, 0.025)',
+      }}
+      transition={{ duration: 0.18 }}
       className={[
-        'border px-3 py-2 text-left transition-colors',
-        active
-          ? 'border-accent-300/60 bg-accent-500/10 text-accent-100'
-          : 'border-white/10 bg-white/[0.025] text-ink-300 hover:border-white/25 hover:bg-white/[0.04]',
+        'border px-3 py-2 text-left',
+        active ? 'text-accent-100' : 'text-ink-300 hover:text-ink-100',
       ].join(' ')}
     >
       <div className="break-words text-[11px] font-medium uppercase leading-4 tracking-[0.08em]">{label}</div>
       <div className="mt-1 break-words text-[10px] leading-4 text-ink-500">{detail}</div>
-    </button>
+    </motion.button>
   );
 }
 
@@ -947,49 +949,39 @@ function Slider({
   min,
   max,
   value,
-  draftValue,
-  onDraft,
-  onCommit,
+  onChange,
 }: {
   label: string;
   min: number;
   max: number;
   value: number;
-  draftValue: number;
-  onDraft: (v: number) => void;
-  onCommit: (v: number) => void;
+  onChange: (v: number) => void;
 }) {
   const clamp = (v: number) => Math.min(max, Math.max(min, v));
-  const integerDraft = Math.round(clamp(draftValue));
-  const commit = (raw = draftValue) => {
-    const snapped = Math.round(clamp(raw));
-    onDraft(snapped);
-    if (snapped !== value) onCommit(snapped);
-  };
+  const display = clamp(value);
 
   return (
     <div>
       <div className="flex items-center justify-between text-xs text-ink-300">
         <span>{label}</span>
-        <span className="font-mono text-ink-100">{integerDraft}</span>
+        <motion.span
+          key={display}
+          initial={{ opacity: 0.6, y: -2 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.12 }}
+          className="font-mono text-ink-100"
+        >
+          {display}
+        </motion.span>
       </div>
       <input
         className="mt-1.5 w-full accent-accent-500"
         type="range"
         min={min}
         max={max}
-        step={0.01}
-        value={clamp(draftValue)}
-        onChange={(e) => {
-          onDraft(Math.round(clamp(Number(e.target.value))));
-        }}
-        onPointerUp={(e) => commit(Number(e.currentTarget.value))}
-        onKeyUp={(e) => {
-          if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') {
-            commit(Number(e.currentTarget.value));
-          }
-        }}
-        onBlur={(e) => commit(Number(e.currentTarget.value))}
+        step={1}
+        value={display}
+        onChange={(e) => onChange(clamp(Number(e.target.value)))}
       />
     </div>
   );
@@ -1023,6 +1015,86 @@ function SharePreview({ shares, threshold }: { shares: number; threshold: number
           );
         })}
       </div>
+    </div>
+  );
+}
+
+type PipelineEntry = { id: string; title: string; body: string; active: boolean };
+
+function PipelineList({
+  vaultMode,
+  zk,
+  vdf,
+  proofState,
+}: {
+  vaultMode: boolean;
+  zk: boolean;
+  vdf: boolean;
+  proofState: { ready: boolean; pipeline: string };
+}) {
+  const entries: PipelineEntry[] = [
+    { id: 'kdf', title: 'Derive key', body: 'HKDF with optional Argon2id pass layer', active: true },
+    {
+      id: 'aead',
+      title: vaultMode ? 'Seal vault root' : 'Encrypt payload',
+      body: vaultMode
+        ? 'AEAD protects the vault root key and exported blob'
+        : 'AEAD protects the plaintext bytes',
+      active: true,
+    },
+    { id: 'kem', title: 'Encapsulate', body: 'ML-KEM public-key recovery envelope', active: true },
+    {
+      id: 'split',
+      title: vaultMode ? 'Emit vault package' : 'Split seed',
+      body: vaultMode ? 'Vault blob plus QR shares' : 'Shamir threshold shares',
+      active: true,
+    },
+  ];
+  if (zk) {
+    entries.push({
+      id: 'zk',
+      title: 'Commit v3 state',
+      body: 'Policy, plaintext, shares, and vault tree',
+      active: true,
+    });
+  }
+  if (vdf) {
+    entries.push({
+      id: 'vdf',
+      title: 'VDF-lock shares',
+      body: 'Sequential class-group delay per share',
+      active: true,
+    });
+  }
+  entries.push({
+    id: 'proof',
+    title: 'Auditor proof',
+    body: proofState.pipeline,
+    active: proofState.ready,
+  });
+
+  return (
+    <div>
+      <AnimatePresence initial={false}>
+        {entries.map((entry, index) => (
+          <motion.div
+            key={entry.id}
+            layout
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.22, ease: 'easeOut' }}
+            style={{ overflow: 'hidden' }}
+          >
+            <PipelineStep
+              idx={String(index + 1).padStart(2, '0')}
+              title={entry.title}
+              body={entry.body}
+              active={entry.active}
+            />
+          </motion.div>
+        ))}
+      </AnimatePresence>
     </div>
   );
 }
