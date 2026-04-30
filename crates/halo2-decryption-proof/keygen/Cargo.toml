@@ -6,6 +6,7 @@ license.workspace = true
 publish = false
 rust-version.workspace = true
 description = "Generates the SSS v3 vaultroot-only Halo2 KZG SRS, proving key, verifying key, and artifact fixture"
+default-run = "halo2-decryption-proof-keygen"
 
 [[bin]]
 name = "halo2-decryption-proof-keygen"
